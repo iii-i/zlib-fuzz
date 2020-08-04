@@ -22,6 +22,7 @@ static void HexDump(FILE *stream, const void *Data, size_t Size) {
 enum OpKind {
   OpDeflate,
   OpDeflateParams,
+  OpInflate,
 };
 
 struct Op {
@@ -36,6 +37,9 @@ struct Op {
       int Level;
       int Strategy;
     } DeflateParams;
+    struct {
+      int Flush;
+    } Inflate;
   };
 };
 
@@ -85,36 +89,36 @@ static int Inflate(z_stream *Strm, int Flush) {
   return Err;
 }
 
-static void RunOp(z_stream *Strm, struct Op *Op, size_t i, size_t OpCount) {
+static int RunOp(z_stream *Strm, struct Op *Op, size_t i, size_t OpCount) {
   uInt AvailIn0 = Strm->avail_in;
   uInt AvailIn1 = AvailIn0 < Op->AvailIn ? AvailIn0 : Op->AvailIn;
-  if (AvailIn1 == 0)
-    return;
   uInt AvailOut0 = Strm->avail_out;
   uInt AvailOut1 = AvailOut0 < Op->AvailOut ? AvailOut0 : Op->AvailOut;
-  if (AvailOut1 == 0)
-    return;
   Strm->avail_in = AvailIn1;
   Strm->avail_out = AvailOut1;
+  int Err;
   switch (Op->Kind) {
-  case OpDeflate: {
-    int Err = Deflate(Strm, Op->Deflate.Flush);
-    assert(Err == Z_OK);
+  case OpDeflate:
+    Err = Deflate(Strm, Op->Deflate.Flush);
+    assert(Err == Z_OK || Err == Z_BUF_ERROR);
     break;
-  }
-  case OpDeflateParams: {
+  case OpDeflateParams:
     if (Debug)
       fprintf(stderr,
               "avail_in = %u; avail_out = %u; deflateParams(&Strm, %i, %i) = ",
               Strm->avail_in, Strm->avail_out, Op->DeflateParams.Level,
               Op->DeflateParams.Strategy);
-    int Err = deflateParams(Strm, Op->DeflateParams.Level,
-                            Op->DeflateParams.Strategy);
+    Err = deflateParams(Strm, Op->DeflateParams.Level,
+                        Op->DeflateParams.Strategy);
     if (Debug)
       fprintf(stderr, "%i;\n", Err);
     assert(Err == Z_OK || Err == Z_BUF_ERROR);
     break;
-  }
+  case OpInflate:
+    Err = Inflate(Strm, Op->Inflate.Flush);
+    assert(Err == Z_OK || Err == Z_STREAM_END || Err == Z_NEED_DICT ||
+           Err == Z_BUF_ERROR);
+    break;
   default:
     fprintf(stderr, "Unexpected Ops[%zu/%zu].Kind: %i\n", i, OpCount, Op->Kind);
     assert(0);
@@ -123,6 +127,7 @@ static void RunOp(z_stream *Strm, struct Op *Op, size_t i, size_t OpCount) {
   Strm->avail_in = AvailIn0 - ConsumedIn;
   uInt ConsumedOut = AvailOut1 - Strm->avail_out;
   Strm->avail_out = AvailOut0 - ConsumedOut;
+  return Err;
 }
 
 static int ChooseLevel(uint8_t Choice) {
@@ -206,57 +211,85 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
     }
   }
 
-  size_t OpCount;
-  POP(OpCount);
-  OpCount++;
-  size_t MaxOpCount = Size / 2;
-  if (OpCount > MaxOpCount)
-    OpCount = MaxOpCount;
-  struct Op Ops[OpCount];
-  uInt AvailInDivisor = 0;
-  uInt AvailOutDivisor = 0;
-  for (size_t i = 0; i < OpCount; i++) {
-    POP(Ops[i].AvailIn);
-    Ops[i].AvailIn++;
-    AvailInDivisor += Ops[i].AvailIn;
-    POP(Ops[i].AvailOut);
-    Ops[i].AvailOut++;
-    AvailOutDivisor += Ops[i].AvailOut;
+  size_t DeflateOpCount;
+  POP(DeflateOpCount);
+  DeflateOpCount++;
+  size_t MaxDeflateOpCount = Size / 2;
+  if (DeflateOpCount > MaxDeflateOpCount)
+    DeflateOpCount = MaxDeflateOpCount;
+  struct Op DeflateOps[DeflateOpCount];
+  uInt DeflateAvailInDivisor = 0;
+  uInt DeflateAvailOutDivisor = 0;
+  if (Debug)
+    fprintf(stderr, "n_deflate_ops = %zu;\n", DeflateOpCount);
+  for (size_t i = 0; i < DeflateOpCount; i++) {
     uint8_t KindChoice;
     POP(KindChoice);
     if (KindChoice < 32) {
-      Ops[i].Kind = OpDeflateParams;
+      DeflateOps[i].Kind = OpDeflateParams;
       uint8_t LevelChoice;
       POP(LevelChoice);
-      Ops[i].DeflateParams.Level = ChooseLevel(LevelChoice);
+      DeflateOps[i].DeflateParams.Level = ChooseLevel(LevelChoice);
       uint8_t StrategyChoice;
       POP(StrategyChoice);
-      Ops[i].DeflateParams.Strategy = ChooseStrategy(StrategyChoice);
+      DeflateOps[i].DeflateParams.Strategy = ChooseStrategy(StrategyChoice);
     } else {
-      Ops[i].Kind = OpDeflate;
+      DeflateOps[i].Kind = OpDeflate;
       uint8_t FlushChoice;
       POP(FlushChoice);
-      Ops[i].Deflate.Flush = ChooseDeflateFlush(FlushChoice);
+      DeflateOps[i].Deflate.Flush = ChooseDeflateFlush(FlushChoice);
     }
+    POP(DeflateOps[i].AvailIn);
+    DeflateOps[i].AvailIn++;
+    DeflateAvailInDivisor += DeflateOps[i].AvailIn;
+    POP(DeflateOps[i].AvailOut);
+    DeflateOps[i].AvailOut++;
+    DeflateAvailOutDivisor += DeflateOps[i].AvailOut;
   }
-#undef POP
-  if (AvailInDivisor == 0 || AvailOutDivisor == 0)
+  if (DeflateAvailInDivisor == 0 || DeflateAvailOutDivisor == 0)
     return 0;
-  size_t CompressedSize = Size * 2 + OpCount * 128;
-  for (size_t i = 0; i < OpCount; i++) {
-    Ops[i].AvailIn = (Ops[i].AvailIn * Size) / AvailInDivisor;
-    Ops[i].AvailOut = (Ops[i].AvailOut * CompressedSize) / AvailOutDivisor;
+  size_t CompressedSize = Size * 2 + DeflateOpCount * 128;
+  for (size_t i = 0; i < DeflateOpCount; i++) {
+    DeflateOps[i].AvailIn =
+        (DeflateOps[i].AvailIn * Size) / DeflateAvailInDivisor;
+    DeflateOps[i].AvailOut =
+        (DeflateOps[i].AvailOut * CompressedSize) / DeflateAvailOutDivisor;
   }
+
+  size_t InflateOpCount;
+  POP(InflateOpCount);
+  InflateOpCount++;
+  size_t MaxInflateOpCount = CompressedSize / 2;
+  if (InflateOpCount > MaxInflateOpCount)
+    InflateOpCount = MaxInflateOpCount;
+  struct Op InflateOps[InflateOpCount];
+  uInt InflateAvailInDivisor = 0;
+  uInt InflateAvailOutDivisor = 0;
+  if (Debug)
+    fprintf(stderr, "n_inflate_ops = %zu;\n", InflateOpCount);
+  for (size_t i = 0; i < InflateOpCount; i++) {
+    InflateOps[i].Kind = OpInflate;
+    InflateOps[i].Inflate.Flush = Z_NO_FLUSH;
+    POP(InflateOps[i].AvailIn);
+    InflateOps[i].AvailIn++;
+    InflateAvailInDivisor += InflateOps[i].AvailIn;
+    POP(InflateOps[i].AvailOut);
+    InflateOps[i].AvailOut++;
+    InflateAvailOutDivisor += InflateOps[i].AvailOut;
+  }
+  if (InflateAvailInDivisor == 0 || InflateAvailOutDivisor == 0)
+    return 0;
+#undef POP
 
   uint8_t *Compressed = malloc(CompressedSize);
   assert(Compressed);
   z_stream Strm;
   memset(&Strm, 0, sizeof(Strm));
-  if (Debug)
-    fprintf(stderr, "deflateInit2(&Strm, %i, Z_DEFLATED, %i, %i, %i);\n",
-            InitialLevel, WindowBits, MemLevel, InitialStrategy);
   int Err = deflateInit2(&Strm, InitialLevel, Z_DEFLATED, WindowBits, MemLevel,
                          InitialStrategy);
+  if (Debug)
+    fprintf(stderr, "deflateInit2(&Strm, %i, Z_DEFLATED, %i, %i, %i) = %i;\n",
+            InitialLevel, WindowBits, MemLevel, InitialStrategy, Err);
   assert(Err == Z_OK);
   if (Dict) {
     Err = DeflateSetDictionary(&Strm, Dict, DictLen);
@@ -271,20 +304,30 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
     HexDump(stderr, Data, Size);
     fprintf(stderr, "\";\nchar next_out[%zu];\n", CompressedSize);
   }
-  for (size_t i = 0; i < OpCount; i++)
-    RunOp(&Strm, &Ops[i], i, OpCount);
+  for (size_t i = 0; i < DeflateOpCount; i++)
+    RunOp(&Strm, &DeflateOps[i], i, DeflateOpCount);
   Err = Deflate(&Strm, Z_FINISH);
   assert(Err == Z_STREAM_END);
   assert(Strm.avail_in == 0);
-  int ActualCompressedSize = CompressedSize - Strm.avail_out;
+  uInt ActualCompressedSize = CompressedSize - Strm.avail_out;
+  assert(ActualCompressedSize == Strm.total_out);
+  if (Debug)
+    fprintf(stderr, "total_out = %i;\n", ActualCompressedSize);
   Err = deflateEnd(&Strm);
   assert(Err == Z_OK);
+
+  for (size_t i = 0; i < InflateOpCount; i++) {
+    InflateOps[i].AvailIn =
+        (InflateOps[i].AvailIn * ActualCompressedSize) / InflateAvailInDivisor;
+    InflateOps[i].AvailOut =
+        (InflateOps[i].AvailOut * Size) / InflateAvailOutDivisor;
+  }
 
   uint8_t *Uncompressed = malloc(Size);
   assert(Uncompressed);
   Err = inflateInit2(&Strm, WindowBits);
   if (Debug)
-    fprintf(stderr, "inflateInit2(&Strm, %i);\n", WindowBits);
+    fprintf(stderr, "inflateInit2(&Strm, %i) = %i;\n", WindowBits, Err);
   assert(Err == Z_OK);
   if (Dict && WindowBits == WB_RAW) {
     Err = InflateSetDictionary(&Strm, Dict, DictLen);
@@ -294,12 +337,24 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   Strm.avail_in = ActualCompressedSize;
   Strm.next_out = Uncompressed;
   Strm.avail_out = Size;
-  Err = Inflate(&Strm, Z_NO_FLUSH);
-  if (Dict && WindowBits == WB_ZLIB) {
-    assert(Err == Z_NEED_DICT);
-    Err = InflateSetDictionary(&Strm, Dict, DictLen);
-    assert(Err == Z_OK);
+  for (size_t i = 0; i < InflateOpCount; i++) {
+    Err = RunOp(&Strm, &InflateOps[i], i, InflateOpCount);
+    if (Err == Z_STREAM_END)
+      assert(i == InflateOpCount - 1);
+    if (Err == Z_NEED_DICT) {
+      assert(Dict && WindowBits == WB_ZLIB);
+      Err = InflateSetDictionary(&Strm, Dict, DictLen);
+      assert(Err == Z_OK);
+    }
+  }
+  if (Err != Z_STREAM_END) {
     Err = Inflate(&Strm, Z_NO_FLUSH);
+    if (Err == Z_NEED_DICT) {
+      assert(Dict && WindowBits == WB_ZLIB);
+      Err = InflateSetDictionary(&Strm, Dict, DictLen);
+      assert(Err == Z_OK);
+      Err = Inflate(&Strm, Z_NO_FLUSH);
+    }
   }
   assert(Err == Z_STREAM_END);
   assert(Strm.avail_in == 0);
