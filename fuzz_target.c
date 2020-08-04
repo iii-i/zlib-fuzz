@@ -6,6 +6,19 @@
 
 #include "zlib.h"
 
+static int Debug;
+
+__attribute__((constructor)) static void Init() {
+  const char *Env = getenv("DEBUG");
+  if (Env && !strcmp(Env, "1"))
+    Debug = 1;
+}
+
+static void HexDump(FILE *stream, const void *Data, size_t Size) {
+  for (size_t i = 0; i < Size; i++)
+    fprintf(stream, "\\x%02x", ((const uint8_t *)Data)[i]);
+}
+
 enum OpKind {
   OpDeflate,
   OpDeflateParams,
@@ -26,6 +39,52 @@ struct Op {
   };
 };
 
+static int DeflateSetDictionary(z_stream *Strm, const void *Dict,
+                                size_t DictLen) {
+  if (Debug) {
+    fprintf(stderr, "deflateSetDictionary(&Strm, \"");
+    HexDump(stderr, Dict, DictLen);
+    fprintf(stderr, "\", %zu) == ", DictLen);
+  }
+  int Err = deflateSetDictionary(Strm, Dict, DictLen);
+  if (Debug)
+    fprintf(stderr, "%i;\n", Err);
+  return Err;
+}
+
+static int Deflate(z_stream *Strm, int Flush) {
+  if (Debug)
+    fprintf(stderr, "avail_in = %u; avail_out = %u; deflate(&Strm, %i) == ",
+            Strm->avail_in, Strm->avail_out, Flush);
+  int Err = deflate(Strm, Flush);
+  if (Debug)
+    fprintf(stderr, "%i;\n", Err);
+  return Err;
+}
+
+static int InflateSetDictionary(z_stream *Strm, const void *Dict,
+                                size_t DictLen) {
+  if (Debug) {
+    fprintf(stderr, "inflateSetDictionary(&Strm, \"");
+    HexDump(stderr, Dict, DictLen);
+    fprintf(stderr, "\", %zu) == ", DictLen);
+  }
+  int Err = inflateSetDictionary(Strm, Dict, DictLen);
+  if (Debug)
+    fprintf(stderr, "%i;\n", Err);
+  return Err;
+}
+
+static int Inflate(z_stream *Strm, int Flush) {
+  if (Debug)
+    fprintf(stderr, "avail_in = %u; avail_out = %u; inflate(&Strm, %i) == ",
+            Strm->avail_in, Strm->avail_out, Flush);
+  int Err = inflate(Strm, Flush);
+  if (Debug)
+    fprintf(stderr, "%i;\n", Err);
+  return Err;
+}
+
 static void RunOp(z_stream *Strm, struct Op *Op, size_t i, size_t OpCount) {
   uInt AvailIn0 = Strm->avail_in;
   uInt AvailIn1 = AvailIn0 < Op->AvailIn ? AvailIn0 : Op->AvailIn;
@@ -39,14 +98,16 @@ static void RunOp(z_stream *Strm, struct Op *Op, size_t i, size_t OpCount) {
   Strm->avail_out = AvailOut1;
   switch (Op->Kind) {
   case OpDeflate: {
-    int Err = deflate(Strm, Op->Deflate.Flush);
-    if (Err != Z_OK) {
-      fprintf(stderr, "deflate(%i) returned %i\n", Op->Deflate.Flush, Err);
-      assert(0);
-    }
+    int Err = Deflate(Strm, Op->Deflate.Flush);
+    assert(Err == Z_OK);
     break;
   }
   case OpDeflateParams: {
+    if (Debug)
+      fprintf(stderr,
+              "avail_in = %u; avail_out = %u; deflateParams(&Strm, %i, %i);\n",
+              Strm->avail_in, Strm->avail_out, Op->DeflateParams.Level,
+              Op->DeflateParams.Strategy);
     int Err = deflateParams(Strm, Op->DeflateParams.Level,
                             Op->DeflateParams.Strategy);
     if (Err != Z_OK && Err != Z_BUF_ERROR) {
@@ -193,20 +254,28 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   assert(Compressed);
   z_stream Strm;
   memset(&Strm, 0, sizeof(Strm));
+  if (Debug)
+    fprintf(stderr, "deflateInit2(&Strm, %i, Z_DEFLATED, %i, %i, %i);\n",
+            InitialLevel, WindowBits, MemLevel, InitialStrategy);
   int Err = deflateInit2(&Strm, InitialLevel, Z_DEFLATED, WindowBits, MemLevel,
                          InitialStrategy);
   assert(Err == Z_OK);
   if (Dict) {
-    Err = deflateSetDictionary(&Strm, Dict, DictLen);
+    Err = DeflateSetDictionary(&Strm, Dict, DictLen);
     assert(Err == Z_OK);
   }
   Strm.next_in = Data;
   Strm.avail_in = Size;
   Strm.next_out = Compressed;
   Strm.avail_out = CompressedSize;
+  if (Debug) {
+    fprintf(stderr, "char next_in[%zu] = \"", Size);
+    HexDump(stderr, Data, Size);
+    fprintf(stderr, "\";\nchar next_out[%zu];\n", CompressedSize);
+  }
   for (size_t i = 0; i < OpCount; i++)
     RunOp(&Strm, &Ops[i], i, OpCount);
-  Err = deflate(&Strm, Z_FINISH);
+  Err = Deflate(&Strm, Z_FINISH);
   assert(Err == Z_STREAM_END);
   assert(Strm.avail_in == 0);
   int ActualCompressedSize = CompressedSize - Strm.avail_out;
@@ -216,21 +285,23 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   uint8_t *Uncompressed = malloc(Size);
   assert(Uncompressed);
   Err = inflateInit2(&Strm, WindowBits);
+  if (Debug)
+    fprintf(stderr, "inflateInit2(&Strm, %i);\n", WindowBits);
   assert(Err == Z_OK);
   if (Dict && WindowBits == WB_RAW) {
-    Err = inflateSetDictionary(&Strm, Dict, DictLen);
+    Err = InflateSetDictionary(&Strm, Dict, DictLen);
     assert(Err == Z_OK);
   }
   Strm.next_in = Compressed;
   Strm.avail_in = ActualCompressedSize;
   Strm.next_out = Uncompressed;
   Strm.avail_out = Size;
-  Err = inflate(&Strm, Z_NO_FLUSH);
+  Err = Inflate(&Strm, Z_NO_FLUSH);
   if (Dict && WindowBits == WB_ZLIB) {
     assert(Err == Z_NEED_DICT);
-    Err = inflateSetDictionary(&Strm, Dict, DictLen);
+    Err = InflateSetDictionary(&Strm, Dict, DictLen);
     assert(Err == Z_OK);
-    Err = inflate(&Strm, Z_NO_FLUSH);
+    Err = Inflate(&Strm, Z_NO_FLUSH);
   }
   assert(Err == Z_STREAM_END);
   assert(Strm.avail_in == 0);
