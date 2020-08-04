@@ -44,7 +44,7 @@ static int DeflateSetDictionary(z_stream *Strm, const void *Dict,
   if (Debug) {
     fprintf(stderr, "deflateSetDictionary(&Strm, \"");
     HexDump(stderr, Dict, DictLen);
-    fprintf(stderr, "\", %zu) == ", DictLen);
+    fprintf(stderr, "\", %zu) = ", DictLen);
   }
   int Err = deflateSetDictionary(Strm, Dict, DictLen);
   if (Debug)
@@ -54,7 +54,7 @@ static int DeflateSetDictionary(z_stream *Strm, const void *Dict,
 
 static int Deflate(z_stream *Strm, int Flush) {
   if (Debug)
-    fprintf(stderr, "avail_in = %u; avail_out = %u; deflate(&Strm, %i) == ",
+    fprintf(stderr, "avail_in = %u; avail_out = %u; deflate(&Strm, %i) = ",
             Strm->avail_in, Strm->avail_out, Flush);
   int Err = deflate(Strm, Flush);
   if (Debug)
@@ -67,7 +67,7 @@ static int InflateSetDictionary(z_stream *Strm, const void *Dict,
   if (Debug) {
     fprintf(stderr, "inflateSetDictionary(&Strm, \"");
     HexDump(stderr, Dict, DictLen);
-    fprintf(stderr, "\", %zu) == ", DictLen);
+    fprintf(stderr, "\", %zu) = ", DictLen);
   }
   int Err = inflateSetDictionary(Strm, Dict, DictLen);
   if (Debug)
@@ -77,7 +77,7 @@ static int InflateSetDictionary(z_stream *Strm, const void *Dict,
 
 static int Inflate(z_stream *Strm, int Flush) {
   if (Debug)
-    fprintf(stderr, "avail_in = %u; avail_out = %u; inflate(&Strm, %i) == ",
+    fprintf(stderr, "avail_in = %u; avail_out = %u; inflate(&Strm, %i) = ",
             Strm->avail_in, Strm->avail_out, Flush);
   int Err = inflate(Strm, Flush);
   if (Debug)
@@ -105,16 +105,14 @@ static void RunOp(z_stream *Strm, struct Op *Op, size_t i, size_t OpCount) {
   case OpDeflateParams: {
     if (Debug)
       fprintf(stderr,
-              "avail_in = %u; avail_out = %u; deflateParams(&Strm, %i, %i);\n",
+              "avail_in = %u; avail_out = %u; deflateParams(&Strm, %i, %i) = ",
               Strm->avail_in, Strm->avail_out, Op->DeflateParams.Level,
               Op->DeflateParams.Strategy);
     int Err = deflateParams(Strm, Op->DeflateParams.Level,
                             Op->DeflateParams.Strategy);
-    if (Err != Z_OK && Err != Z_BUF_ERROR) {
-      fprintf(stderr, "deflateParams(%i, %i) returned %i\n",
-              Op->DeflateParams.Level, Op->DeflateParams.Strategy, Err);
-      assert(0);
-    }
+    if (Debug)
+      fprintf(stderr, "%i;\n", Err);
+    assert(Err == Z_OK || Err == Z_BUF_ERROR);
     break;
   }
   default:
