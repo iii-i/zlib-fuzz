@@ -279,6 +279,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   }
   if (InflateAvailInDivisor == 0 || InflateAvailOutDivisor == 0)
     return 0;
+
+  size_t TailSize;
+  POP(TailSize);
 #undef POP
 
   uint8_t *Compressed = malloc(CompressedSize);
@@ -336,7 +339,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   Strm.next_in = Compressed;
   Strm.avail_in = ActualCompressedSize;
   Strm.next_out = Uncompressed;
-  Strm.avail_out = Size;
+  Strm.avail_out = Size + TailSize;
   for (size_t i = 0; i < InflateOpCount; i++) {
     Err = RunOp(&Strm, &InflateOps[i], i, InflateOpCount);
     if (Err == Z_STREAM_END)
@@ -358,7 +361,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   }
   assert(Err == Z_STREAM_END);
   assert(Strm.avail_in == 0);
-  assert(Strm.avail_out == 0);
+  assert(Strm.avail_out == TailSize);
   assert(memcmp(Uncompressed, Data, Size) == 0);
   Err = inflateEnd(&Strm);
   assert(Err == Z_OK);
