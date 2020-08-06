@@ -1,4 +1,7 @@
+*.o
 a.out
 crash-*
 fuzz-*
+fuzz_target.pb.cc
+fuzz_target.pb.h
 minimized-*

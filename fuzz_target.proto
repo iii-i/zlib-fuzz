@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+enum Flush {
+  PB_Z_NO_FLUSH = 0;
+  PB_Z_PARTIAL_FLUSH = 1;
+  PB_Z_SYNC_FLUSH = 2;
+  PB_Z_FULL_FLUSH = 3;
+  PB_Z_FINISH = 4;
+  PB_Z_BLOCK = 5;
+  PB_Z_TREES = 6;
+}
+
+enum Level {
+  PB_Z_NO_COMPRESSION = 0;
+  PB_Z_BEST_SPEED = 1;
+  Z_LEVEL2 = 2;
+  Z_LEVEL3 = 3;
+  Z_LEVEL4 = 4;
+  Z_LEVEL5 = 5;
+  Z_LEVEL6 = 6;
+  Z_LEVEL7 = 7;
+  Z_LEVEL8 = 8;
+  PB_Z_BEST_COMPRESSION = 9;
+  PB_Z_DEFAULT_COMPRESSION = -1;
+}
+
+enum Strategy {
+  PB_Z_DEFAULT_STRATEGY = 0;
+  PB_Z_FILTERED = 1;
+  PB_Z_HUFFMAN_ONLY = 2;
+  PB_Z_RLE = 3;
+  PB_Z_FIXED = 4;
+}
+
+enum WindowBits {
+  WB_DEFAULT = 0;
+  WB_RAW = -15;
+  WB_ZLIB = 15;
+  WB_GZIP = 31;
+}
+
+enum MemLevel {
+  MEM_LEVEL_DEFAULT = 0;
+  MEM_LEVEL1 = 1;
+  MEM_LEVEL2 = 2;
+  MEM_LEVEL3 = 3;
+  MEM_LEVEL4 = 4;
+  MEM_LEVEL5 = 5;
+  MEM_LEVEL6 = 6;
+  MEM_LEVEL7 = 7;
+  MEM_LEVEL8 = 8;
+  PB_MAX_MEM_LEVEL = 9;
+}
+
+message Deflate {
+  Flush flush = 1;
+}
+
+message DeflateParams {
+  Level level = 1;
+  Strategy strategy = 2;
+}
+
+message Inflate {
+  Flush flush = 3;
+}
+
+message Op {
+  int32 avail_in = 1;
+  int32 avail_out = 2;
+  oneof op {
+    Deflate deflate = 3;
+    DeflateParams deflate_params = 4;
+    Inflate inflate = 5;
+  }
+}
+
+message Plan {
+  bytes data = 1;
+  Level level = 2;
+  WindowBits window_bits = 3;
+  MemLevel mem_level = 4;
+  Strategy strategy = 5;
+  int32 dict_len = 6;
+  repeated Op deflate_ops = 7;
+  repeated Op inflate_ops = 8;
+  int32 tail_size = 9;
+}
