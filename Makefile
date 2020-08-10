@@ -7,7 +7,7 @@ a.out: fuzz_target.o fuzz_target.pb.o $(LIBZ_A)
 	$(CXX) -fsanitize=address,fuzzer fuzz_target.o fuzz_target.pb.o $(LIBZ_A) -lprotobuf
 
 $(LIBZ_A): $(LIBZ_SOURCES)
-	cd $(ZLIB) && $(MAKE)
+	cd $(ZLIB) && $(MAKE) libz.a
 
 fuzz_target.o: fuzz_target.cpp fuzz_target.pb.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,fuzzer -DZLIB_CONST -c fuzz_target.cpp

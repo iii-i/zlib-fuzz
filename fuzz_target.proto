@@ -81,7 +81,7 @@ message Plan {
   WindowBits window_bits = 3;
   MemLevel mem_level = 4;
   Strategy strategy = 5;
-  int32 dict_len = 6;
+  bytes dict = 6;
   repeated Op deflate_ops = 7;
   repeated Op inflate_ops = 8;
   int32 tail_size = 9;

@@ -190,8 +190,7 @@ static bool NormalizeOps(OpsT &Ops, uInt TotalIn, uInt TotalOut) {
 }
 
 static bool GeneratePlan(Plan &Plan, size_t &CompressedSize,
-                         const uint8_t *&Dict, const uint8_t *&Data,
-                         size_t &Size) {
+                         const uint8_t *&Data, size_t &Size) {
 #define POP(X)                                                                 \
   if (Size == 0)                                                               \
     return false;                                                              \
@@ -212,7 +211,6 @@ static bool GeneratePlan(Plan &Plan, size_t &CompressedSize,
   POP(InitialStrategyChoice);
   Plan.set_strategy(ChooseStrategy(InitialStrategyChoice));
 
-  Dict = NULL;
   if (Plan.window_bits() != WB_GZIP) {
     size_t DictLen;
     POP(DictLen);
@@ -220,10 +218,9 @@ static bool GeneratePlan(Plan &Plan, size_t &CompressedSize,
       size_t MaxDictLen = Size / 4;
       if (DictLen > MaxDictLen)
         DictLen = MaxDictLen;
-      Dict = Data;
+      Plan.set_dict(Data, DictLen);
       Data += DictLen;
       Size -= DictLen;
-      Plan.set_dict_len(DictLen);
     }
   }
 
@@ -267,8 +264,6 @@ static bool GeneratePlan(Plan &Plan, size_t &CompressedSize,
     Op->set_avail_out(AvailOut);
   }
   CompressedSize = Size * 2 + DeflateOpCount * 128;
-  if (!NormalizeOps(*Plan.mutable_deflate_ops(), Size, CompressedSize))
-    return false;
 
   size_t InflateOpCount;
   POP(InflateOpCount);
@@ -298,15 +293,15 @@ static bool GeneratePlan(Plan &Plan, size_t &CompressedSize,
   Plan.set_tail_size(TailSize);
 #undef POP
 
+  Plan.set_data(Data, Size);
+
   return true;
 }
 
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
-  Plan Plan;
-  size_t CompressedSize;
-  const uint8_t *Dict;
-  if (!GeneratePlan(Plan, CompressedSize, Dict, Data, Size))
-    return 0;
+static void RunPlan(Plan &Plan, size_t CompressedSize) {
+  if (!NormalizeOps(*Plan.mutable_deflate_ops(), Plan.data().size(),
+                    CompressedSize))
+    return;
 
   std::unique_ptr<uint8_t[]> Compressed(new uint8_t[CompressedSize]);
   z_stream Strm;
@@ -318,17 +313,18 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
             Plan.level(), Plan.window_bits(), Plan.mem_level(), Plan.strategy(),
             Err);
   assert(Err == Z_OK);
-  if (Dict) {
-    Err = DeflateSetDictionary(&Strm, Dict, Plan.dict_len());
+  if (Plan.dict().size() > 0) {
+    Err = DeflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
+                               Plan.dict().size());
     assert(Err == Z_OK);
   }
-  Strm.next_in = Data;
-  Strm.avail_in = Size;
+  Strm.next_in = (const Bytef *)Plan.data().c_str();
+  Strm.avail_in = Plan.data().size();
   Strm.next_out = Compressed.get();
   Strm.avail_out = CompressedSize;
   if (Debug) {
-    fprintf(stderr, "char next_in[%zu] = \"", Size);
-    HexDump(stderr, Data, Size);
+    fprintf(stderr, "char next_in[%zu] = \"", Plan.data().size());
+    HexDump(stderr, Plan.data().c_str(), Plan.data().size());
     fprintf(stderr, "\";\nchar next_out[%zu];\n", CompressedSize);
   }
   for (int i = 0; i < Plan.deflate_ops_size(); i++)
@@ -343,35 +339,39 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   Err = deflateEnd(&Strm);
   assert(Err == Z_OK);
 
-  if (!NormalizeOps(*Plan.mutable_inflate_ops(), ActualCompressedSize, Size))
-    return 0;
+  if (!NormalizeOps(*Plan.mutable_inflate_ops(), ActualCompressedSize,
+                    Plan.data().size()))
+    return;
 
-  std::unique_ptr<uint8_t[]> Uncompressed(new uint8_t[Size]);
+  std::unique_ptr<uint8_t[]> Uncompressed(new uint8_t[Plan.data().size()]);
   Err = inflateInit2(&Strm, Plan.window_bits());
   if (Debug)
     fprintf(stderr, "inflateInit2(&Strm, %i) = %i;\n", Plan.window_bits(), Err);
   assert(Err == Z_OK);
-  if (Dict && Plan.window_bits() == WB_RAW) {
-    Err = InflateSetDictionary(&Strm, Dict, Plan.dict_len());
+  if (Plan.dict().size() > 0 && Plan.window_bits() == WB_RAW) {
+    Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
+                               Plan.dict().size());
     assert(Err == Z_OK);
   }
   Strm.next_in = Compressed.get();
   Strm.avail_in = ActualCompressedSize;
   Strm.next_out = Uncompressed.get();
-  Strm.avail_out = Size + Plan.tail_size();
+  Strm.avail_out = Plan.data().size() + Plan.tail_size();
   for (int i = 0; i < Plan.inflate_ops_size(); i++) {
     Err = RunOp(&Strm, Plan.inflate_ops(i), i, Plan.inflate_ops_size());
     if (Err == Z_NEED_DICT) {
-      assert(Dict && Plan.window_bits() == WB_ZLIB);
-      Err = InflateSetDictionary(&Strm, Dict, Plan.dict_len());
+      assert(Plan.dict().size() > 0 && Plan.window_bits() == WB_ZLIB);
+      Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
+                                 Plan.dict().size());
       assert(Err == Z_OK);
     }
   }
   if (Err != Z_STREAM_END) {
     Err = Inflate(&Strm, Z_NO_FLUSH);
     if (Err == Z_NEED_DICT) {
-      assert(Dict && Plan.window_bits() == WB_ZLIB);
-      Err = InflateSetDictionary(&Strm, Dict, Plan.dict_len());
+      assert(Plan.dict().size() > 0 && Plan.window_bits() == WB_ZLIB);
+      Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
+                                 Plan.dict().size());
       assert(Err == Z_OK);
       Err = Inflate(&Strm, Z_NO_FLUSH);
     }
@@ -379,8 +379,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   assert(Err == Z_STREAM_END);
   assert(Strm.avail_in == 0);
   assert(Strm.avail_out == (uInt)Plan.tail_size());
-  assert(memcmp(Uncompressed.get(), Data, Size) == 0);
+  assert(memcmp(Uncompressed.get(), Plan.data().c_str(), Plan.data().size()) ==
+         0);
   Err = inflateEnd(&Strm);
   assert(Err == Z_OK);
+}
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
+  Plan Plan;
+  size_t CompressedSize;
+  if (!GeneratePlan(Plan, CompressedSize, Data, Size))
+    return 0;
+  RunPlan(Plan, CompressedSize);
   return 0;
 }
