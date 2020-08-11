@@ -5,3 +5,5 @@ fuzz-*
 fuzz_target.pb.cc
 fuzz_target.pb.h
 minimized-*
+a.out_afl
+out/

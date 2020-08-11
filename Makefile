@@ -1,19 +1,49 @@
 CXX=clang++
+AFLCC=$(AFL)/afl-clang-fast
+AFLCXX=$(AFL)/afl-clang-fast++
 CXXFLAGS=-std=c++17 -fPIC -Wall -Wextra -Werror -O2 -g
 LIBZ_A:=$(ZLIB)/libz.a
+LIBZ_A_AFL:=$(ZLIB)/libz_afl.a
 LIBZ_SOURCES:=$(foreach file,$(shell git -C $(ZLIB) ls-files),$(ZLIB)/$(file))
 
 a.out: fuzz_target.o fuzz_target.pb.o $(LIBZ_A)
 	$(CXX) -fsanitize=address,fuzzer fuzz_target.o fuzz_target.pb.o $(LIBZ_A) -lprotobuf
 
+# For building for afl, run
+# make ZLIB=path/to/zlib AFL=path/to/AFLplusplus afl
+.PHONY: afl
+afl: a.out_afl
+	@echo "Now kick off afl as follows:"
+	@echo "$ afl-fuzz -m none -i in -o out ./$^"
+	@echo
+	@echo "where"
+	@echo "  -m disables the memory limit (required for ASAN)"
+	@echo "  -i in is the directory with the starting corpus"
+	@echo "  -o out is afl's run state and output directory"
+	@echo
+	@echo "Note: to resume a previous session, specify '-i -' as input directory"
+
+a.out_afl: fuzz_target_afl.o fuzz_target.pb_afl.o afl_driver.o $(LIBZ_A_AFL)
+	$(AFLCXX) -fsanitize=address -o $@ $^ -lprotobuf
+
 $(LIBZ_A): $(LIBZ_SOURCES)
 	cd $(ZLIB) && $(MAKE) libz.a
+
+$(LIBZ_A_AFL): $(LIBZ_SOURCES)
+	cd $(ZLIB) && $(MAKE) libz.a CC=$(AFLCC)
+	cd $(ZLIB) && mv libz.a $@
 
 fuzz_target.o: fuzz_target.cpp fuzz_target.pb.h
 	$(CXX) $(CXXFLAGS) -fsanitize=address,fuzzer -DZLIB_CONST -c fuzz_target.cpp
 
+fuzz_target_afl.o: fuzz_target.cpp fuzz_target.pb.h
+	$(AFLCXX) $(CXXFLAGS) -fsanitize=address -DZLIB_CONST -c fuzz_target.cpp -o $@
+
 fuzz_target.pb.o: fuzz_target.pb.cc fuzz_target.pb.h
 	$(CXX) $(CXXFLAGS) -c fuzz_target.pb.cc
+
+fuzz_target.pb_afl.o: fuzz_target.pb.cc fuzz_target.pb.h
+	$(AFLCXX) $(CXXFLAGS) -c fuzz_target.pb.cc -o $@
 
 fuzz_target.pb.cc fuzz_target.pb.h: fuzz_target.proto
 	protoc --cpp_out=. fuzz_target.proto
