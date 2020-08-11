@@ -1,9 +1,11 @@
 *.o
-a.out
+*.o.tmp
+a.out_afl
 crash-*
+fuzz
 fuzz-*
+fuzz_libprotobuf_mutator
 fuzz_target.pb.cc
 fuzz_target.pb.h
 minimized-*
-a.out_afl
 out/

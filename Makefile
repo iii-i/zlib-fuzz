@@ -1,13 +1,19 @@
 CXX=clang++
 AFLCC=$(AFL)/afl-clang-fast
 AFLCXX=$(AFL)/afl-clang-fast++
-CXXFLAGS=-std=c++17 -fPIC -Wall -Wextra -Werror -O2 -g
+override CXXFLAGS:=-std=c++17 -fPIC -Wall -Wextra -Werror -O2 -g $(CXXFLAGS)
 LIBZ_A:=$(ZLIB)/libz.a
 LIBZ_A_AFL:=$(ZLIB)/libz_afl.a
 LIBZ_SOURCES:=$(foreach file,$(shell git -C $(ZLIB) ls-files),$(ZLIB)/$(file))
+LIBPROTOBUF=protobuf
 
-a.out: fuzz_target.o fuzz_target.pb.o $(LIBZ_A)
-	$(CXX) -fsanitize=address,fuzzer fuzz_target.o fuzz_target.pb.o $(LIBZ_A) -lprotobuf
+all: fuzz fuzz_libprotobuf_mutator
+
+fuzz: fuzz_target.o fuzz_target.pb.o $(LIBZ_A)
+	$(CXX) $(LDFLAGS) -fsanitize=address,fuzzer fuzz_target.o fuzz_target.pb.o -o $@ $(LIBZ_A) -l$(LIBPROTOBUF)
+
+fuzz_libprotobuf_mutator: fuzz_target_libprotobuf_mutator.o fuzz_target.pb.o $(LIBZ_A)
+	$(CXX) $(LDFLAGS) -fsanitize=address,fuzzer fuzz_target_libprotobuf_mutator.o fuzz_target.pb.o -o $@ $(LIBZ_A) -lprotobuf-mutator-libfuzzer -lprotobuf-mutator -l$(LIBPROTOBUF)
 
 # For building for afl, run
 # make ZLIB=path/to/zlib AFL=path/to/AFLplusplus afl
@@ -33,8 +39,11 @@ $(LIBZ_A_AFL): $(LIBZ_SOURCES)
 	cd $(ZLIB) && $(MAKE) libz.a CC=$(AFLCC)
 	cd $(ZLIB) && mv libz.a $@
 
-fuzz_target.o: fuzz_target.cpp fuzz_target.pb.h
-	$(CXX) $(CXXFLAGS) -fsanitize=address,fuzzer -DZLIB_CONST -c fuzz_target.cpp
+fuzz_target.o: fuzz_target.cpp fuzz_target.pb.h | fmt
+	$(CXX) $(CXXFLAGS) -fsanitize=address,fuzzer -DZLIB_CONST -c fuzz_target.cpp -o $@
+
+fuzz_target_libprotobuf_mutator.o: fuzz_target.cpp fuzz_target.pb.h | fmt
+	$(CXX) $(CXXFLAGS) -fsanitize=address,fuzzer -DUSE_LIBPROTOBUF_MUTATOR -DZLIB_CONST -c fuzz_target.cpp -o $@
 
 fuzz_target_afl.o: fuzz_target.cpp fuzz_target.pb.h
 	$(AFLCXX) $(CXXFLAGS) -fsanitize=address -DZLIB_CONST -c fuzz_target.cpp -o $@

@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef USE_LIBPROTOBUF_MUTATOR
+#include <src/libfuzzer/libfuzzer_macro.h>
+#endif
 #include <zlib.h>
 
 #include "fuzz_target.pb.h"
@@ -126,6 +129,23 @@ static int RunOp(z_stream *Strm, const Op &Op, size_t i, size_t OpCount) {
   return Err;
 }
 
+template <typename OpsT>
+static void NormalizeOps(OpsT &Ops, uInt TotalIn, uInt TotalOut) {
+  uInt InDivisor = 0;
+  uInt OutDivisor = 0;
+  for (Op &Op : Ops) {
+    InDivisor += Op.avail_in();
+    OutDivisor += Op.avail_out();
+  }
+  if (InDivisor != 0)
+    for (Op &Op : Ops)
+      Op.set_avail_in((Op.avail_in() * TotalIn) / InDivisor);
+  if (OutDivisor != 0)
+    for (Op &Op : Ops)
+      Op.set_avail_out((Op.avail_out() * TotalOut) / OutDivisor);
+}
+
+#ifndef USE_LIBPROTOBUF_MUTATOR
 static Level ChooseLevel(uint8_t Choice) {
   if (Choice < 128)
     return (Level)((Choice % 11) - 1);
@@ -172,25 +192,7 @@ static Flush ChooseDeflateFlush(uint8_t Choice) {
     return PB_Z_NO_FLUSH;
 }
 
-template <typename OpsT>
-static bool NormalizeOps(OpsT &Ops, uInt TotalIn, uInt TotalOut) {
-  uInt InDivisor = 0;
-  uInt OutDivisor = 0;
-  for (Op &Op : Ops) {
-    InDivisor += Op.avail_in();
-    OutDivisor += Op.avail_out();
-  }
-  if (InDivisor == 0 || OutDivisor == 0)
-    return false;
-  for (Op &Op : Ops) {
-    Op.set_avail_in((Op.avail_in() * TotalIn) / InDivisor);
-    Op.set_avail_out((Op.avail_out() * TotalOut) / OutDivisor);
-  }
-  return true;
-}
-
-static bool GeneratePlan(Plan &Plan, size_t &CompressedSize,
-                         const uint8_t *&Data, size_t &Size) {
+static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
 #define POP(X)                                                                 \
   if (Size == 0)                                                               \
     return false;                                                              \
@@ -226,12 +228,9 @@ static bool GeneratePlan(Plan &Plan, size_t &CompressedSize,
 
   size_t DeflateOpCount;
   POP(DeflateOpCount);
-  DeflateOpCount++;
   size_t MaxDeflateOpCount = Size / 2;
   if (DeflateOpCount > MaxDeflateOpCount)
     DeflateOpCount = MaxDeflateOpCount;
-  if (Debug)
-    fprintf(stderr, "n_deflate_ops = %zu;\n", DeflateOpCount);
   for (size_t i = 0; i < DeflateOpCount; i++) {
     Op *Op = Plan.add_deflate_ops();
     uint8_t KindChoice;
@@ -263,16 +262,12 @@ static bool GeneratePlan(Plan &Plan, size_t &CompressedSize,
     AvailOut++;
     Op->set_avail_out(AvailOut);
   }
-  CompressedSize = Size * 2 + DeflateOpCount * 128;
 
   size_t InflateOpCount;
   POP(InflateOpCount);
-  InflateOpCount++;
-  size_t MaxInflateOpCount = CompressedSize / 2;
+  size_t MaxInflateOpCount = MaxDeflateOpCount * 2;
   if (InflateOpCount > MaxInflateOpCount)
     InflateOpCount = MaxInflateOpCount;
-  if (Debug)
-    fprintf(stderr, "n_inflate_ops = %zu;\n", InflateOpCount);
   for (size_t i = 0; i < InflateOpCount; i++) {
     Op *Op = Plan.add_inflate_ops();
     std::unique_ptr<class Inflate> Inflate = std::make_unique<class Inflate>();
@@ -297,11 +292,19 @@ static bool GeneratePlan(Plan &Plan, size_t &CompressedSize,
 
   return true;
 }
+#endif
 
-static void RunPlan(Plan &Plan, size_t CompressedSize) {
-  if (!NormalizeOps(*Plan.mutable_deflate_ops(), Plan.data().size(),
-                    CompressedSize))
-    return;
+static void FixupPlan(Plan *Plan) {
+  if (Plan->data().size() == 0)
+    Plan->set_data("!");
+}
+
+static void RunPlan(Plan &Plan) {
+  size_t CompressedSize =
+      Plan.data().size() * 2 + (Plan.deflate_ops_size() + 1) * 128;
+  NormalizeOps(*Plan.mutable_deflate_ops(), Plan.data().size(), CompressedSize);
+  if (Debug)
+    fprintf(stderr, "n_deflate_ops = %i;\n", Plan.deflate_ops_size());
 
   std::unique_ptr<uint8_t[]> Compressed(new uint8_t[CompressedSize]);
   z_stream Strm;
@@ -339,9 +342,10 @@ static void RunPlan(Plan &Plan, size_t CompressedSize) {
   Err = deflateEnd(&Strm);
   assert(Err == Z_OK);
 
-  if (!NormalizeOps(*Plan.mutable_inflate_ops(), ActualCompressedSize,
-                    Plan.data().size()))
-    return;
+  NormalizeOps(*Plan.mutable_inflate_ops(), ActualCompressedSize,
+               Plan.data().size());
+  if (Debug)
+    fprintf(stderr, "n_inflate_ops = %i;\n", Plan.inflate_ops_size());
 
   std::unique_ptr<uint8_t[]> Uncompressed(new uint8_t[Plan.data().size()]);
   Err = inflateInit2(&Strm, Plan.window_bits());
@@ -385,11 +389,46 @@ static void RunPlan(Plan &Plan, size_t CompressedSize) {
   assert(Err == Z_OK);
 }
 
+#ifdef USE_LIBPROTOBUF_MUTATOR
+static void FixupOps(google::protobuf::RepeatedPtrField<Op> *Ops,
+                     bool IsDeflate) {
+  int Pos = 0;
+  for (int i = 0, size = Ops->size(); i < size; i++) {
+    const Op &Op = (*Ops)[i];
+    if (Op.op_case() == 0 ||
+        (IsDeflate && !Op.has_deflate() && !Op.has_deflate_params()) ||
+        (!IsDeflate && !Op.has_inflate()))
+      continue;
+    Ops->SwapElements(Pos, i);
+  }
+  Ops->DeleteSubrange(Pos, Ops->size() - Pos);
+}
+
+static protobuf_mutator::libfuzzer::PostProcessorRegistration<Plan> reg = {
+    [](Plan *Plan, unsigned int /* Seed */) {
+      FixupPlan(Plan);
+      if (Plan->window_bits() == WB_DEFAULT)
+        Plan->set_window_bits(WB_ZLIB);
+      if (Plan->mem_level() == MEM_LEVEL_DEFAULT)
+        Plan->set_mem_level(MEM_LEVEL8);
+      FixupOps(Plan->mutable_deflate_ops(), true);
+      FixupOps(Plan->mutable_inflate_ops(), false);
+      if (Plan->window_bits() == WB_GZIP)
+        Plan->clear_dict();
+      Plan->set_tail_size(Plan->tail_size() & 0xff);
+    }};
+
+DEFINE_PROTO_FUZZER(const Plan &Plan) {
+  class Plan PlanCopy = Plan;
+  RunPlan(PlanCopy);
+}
+#else
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   Plan Plan;
-  size_t CompressedSize;
-  if (!GeneratePlan(Plan, CompressedSize, Data, Size))
-    return 0;
-  RunPlan(Plan, CompressedSize);
+  if (GeneratePlan(Plan, Data, Size)) {
+    FixupPlan(&Plan);
+    RunPlan(Plan);
+  }
   return 0;
 }
+#endif
