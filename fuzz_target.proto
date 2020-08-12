@@ -53,32 +53,34 @@ enum MemLevel {
 }
 
 message Deflate {
-  Flush flush = 1;
+  int32 avail_in = 1;
+  int32 avail_out = 2;
+  Flush flush = 3;
 }
 
 message DeflateParams {
-  Level level = 1;
-  Strategy strategy = 2;
+  int32 avail_in = 1;
+  int32 avail_out = 2;
+  Level level = 3;
+  Strategy strategy = 4;
 }
 
 message Inflate {
+  int32 avail_in = 1;
+  int32 avail_out = 2;
   Flush flush = 3;
 }
 
 message DeflateOp {
-  int32 avail_in = 1;
-  int32 avail_out = 2;
   oneof op {
-    Deflate deflate = 3;
-    DeflateParams deflate_params = 4;
+    Deflate deflate = 1;
+    DeflateParams deflate_params = 2;
   }
 }
 
 message InflateOp {
-  int32 avail_in = 1;
-  int32 avail_out = 2;
   oneof op {
-    Inflate inflate = 3;
+    Inflate inflate = 1;
   }
 }
 

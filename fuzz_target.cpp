@@ -89,62 +89,109 @@ static int Inflate(z_stream *Strm, int Flush) {
   return Err;
 }
 
-static int RunOpImpl(z_stream *Strm, const DeflateOp &Op, size_t i,
-                     size_t OpCount) {
-  int Err;
-  if (Op.has_deflate()) {
-    Err = Deflate(Strm, Op.deflate().flush());
+struct Avail {
+  z_stream *const Strm;
+  const uInt AvailIn0;
+  const uInt AvailIn1;
+  const uInt AvailOut0;
+  const uInt AvailOut1;
+
+  template <typename OpT>
+  Avail(z_stream *Strm, const OpT &Op)
+      : Strm(Strm), AvailIn0(Strm->avail_in),
+        AvailIn1(AvailIn0 < (uInt)Op.avail_in() ? AvailIn0
+                                                : (uInt)Op.avail_in()),
+        AvailOut0(Strm->avail_out),
+        AvailOut1(AvailOut0 < (uInt)Op.avail_out() ? AvailOut0
+                                                   : (uInt)Op.avail_out()) {
+    Strm->avail_in = AvailIn1;
+    Strm->avail_out = AvailOut1;
+  }
+
+  ~Avail() {
+    uInt ConsumedIn = AvailIn1 - Strm->avail_in;
+    Strm->avail_in = AvailIn0 - ConsumedIn;
+    uInt ConsumedOut = AvailOut1 - Strm->avail_out;
+    Strm->avail_out = AvailOut0 - ConsumedOut;
+  }
+};
+
+struct OpRunner {
+  z_stream *const Strm;
+
+  OpRunner(z_stream *Strm) : Strm(Strm) {}
+
+  int operator()(const class Deflate &Op) const {
+    Avail Avail(Strm, Op);
+    int Err = Deflate(Strm, Op.flush());
     assert(Err == Z_OK || Err == Z_BUF_ERROR);
-  } else if (Op.has_deflate_params()) {
+    return Err;
+  }
+
+  int operator()(const class DeflateParams &Op) const {
+    Avail Avail(Strm, Op);
     if (Debug)
       fprintf(stderr,
               "avail_in = %u; avail_out = %u; deflateParams(&Strm, %i, %i) = ",
-              Strm->avail_in, Strm->avail_out, Op.deflate_params().level(),
-              Op.deflate_params().strategy());
-    Err = deflateParams(Strm, Op.deflate_params().level(),
-                        Op.deflate_params().strategy());
+              Strm->avail_in, Strm->avail_out, Op.level(), Op.strategy());
+    int Err = deflateParams(Strm, Op.level(), Op.strategy());
     if (Debug)
       fprintf(stderr, "%i;\n", Err);
     assert(Err == Z_OK || Err == Z_BUF_ERROR);
-  } else {
-    fprintf(stderr, "Unexpected deflate_ops[%zu/%zu].op_case() = %i\n", i,
-            OpCount, Op.op_case());
-    assert(0);
+    return Err;
   }
-  return Err;
-}
 
-static int RunOpImpl(z_stream *Strm, const InflateOp &Op, size_t i,
-                     size_t OpCount) {
-  int Err;
-  if (Op.has_inflate()) {
-    Err = Inflate(Strm, Op.inflate().flush());
+  int operator()(const class Inflate &Op) const {
+    Avail Avail(Strm, Op);
+    int Err = Inflate(Strm, Op.flush());
     assert(Err == Z_OK || Err == Z_STREAM_END || Err == Z_NEED_DICT ||
            Err == Z_BUF_ERROR);
-  } else {
-    fprintf(stderr, "Unexpected inflate_ops[%zu/%zu].op_case() = %i\n", i,
-            OpCount, Op.op_case());
+    return Err;
+  }
+};
+
+template <typename V>
+static int VisitOp(const DeflateOp &Op, const V &Visitor) {
+  if (Op.has_deflate())
+    return Visitor(Op.deflate());
+  else if (Op.has_deflate_params())
+    return Visitor(Op.deflate_params());
+  else {
+    fprintf(stderr, "Unexpected DeflateOp.op_case() = %i\n", Op.op_case());
     assert(0);
   }
-  return Err;
 }
 
-template <typename OpT>
-static int RunOp(z_stream *Strm, const OpT &Op, size_t i, size_t OpCount) {
-  uInt AvailIn0 = Strm->avail_in;
-  uInt AvailIn1 =
-      AvailIn0 < (uInt)Op.avail_in() ? AvailIn0 : (uInt)Op.avail_in();
-  uInt AvailOut0 = Strm->avail_out;
-  uInt AvailOut1 =
-      AvailOut0 < (uInt)Op.avail_out() ? AvailOut0 : (uInt)Op.avail_out();
-  Strm->avail_in = AvailIn1;
-  Strm->avail_out = AvailOut1;
-  int Err = RunOpImpl(Strm, Op, i, OpCount);
-  uInt ConsumedIn = AvailIn1 - Strm->avail_in;
-  Strm->avail_in = AvailIn0 - ConsumedIn;
-  uInt ConsumedOut = AvailOut1 - Strm->avail_out;
-  Strm->avail_out = AvailOut0 - ConsumedOut;
-  return Err;
+template <typename V>
+static int VisitMutableOp(DeflateOp &Op, const V &Visitor) {
+  if (Op.has_deflate())
+    return Visitor(Op.mutable_deflate());
+  else if (Op.has_deflate_params())
+    return Visitor(Op.mutable_deflate_params());
+  else {
+    fprintf(stderr, "Unexpected DeflateOp.op_case() = %i\n", Op.op_case());
+    assert(0);
+  }
+}
+
+template <typename V>
+static int VisitOp(const InflateOp &Op, const V &Visitor) {
+  if (Op.has_inflate())
+    return Visitor(Op.inflate());
+  else {
+    fprintf(stderr, "Unexpected InflateOp.op_case() = %i\n", Op.op_case());
+    assert(0);
+  }
+}
+
+template <typename V>
+static int VisitMutableOp(InflateOp &Op, const V &Visitor) {
+  if (Op.has_inflate())
+    return Visitor(Op.mutable_inflate());
+  else {
+    fprintf(stderr, "Unexpected InflateOp.op_case() = %i\n", Op.op_case());
+    assert(0);
+  }
 }
 
 template <typename OpsT>
@@ -152,15 +199,27 @@ static void NormalizeOps(OpsT *Ops, uInt TotalIn, uInt TotalOut) {
   uInt InDivisor = 0;
   uInt OutDivisor = 0;
   for (typename OpsT::value_type &Op : *Ops) {
-    InDivisor += Op.avail_in();
-    OutDivisor += Op.avail_out();
+    VisitOp(Op, [&InDivisor](auto &Op) {
+      InDivisor += Op.avail_in();
+      return 0;
+    });
+    VisitOp(Op, [&OutDivisor](auto &Op) {
+      OutDivisor += Op.avail_out();
+      return 0;
+    });
   }
   if (InDivisor != 0)
     for (typename OpsT::value_type &Op : *Ops)
-      Op.set_avail_in((Op.avail_in() * TotalIn) / InDivisor);
+      VisitMutableOp(Op, [TotalIn, InDivisor](auto *Op) {
+        Op->set_avail_in((Op->avail_in() * TotalIn) / InDivisor);
+        return 0;
+      });
   if (OutDivisor != 0)
     for (typename OpsT::value_type &Op : *Ops)
-      Op.set_avail_out((Op.avail_out() * TotalOut) / OutDivisor);
+      VisitMutableOp(Op, [TotalOut, OutDivisor](auto *Op) {
+        Op->set_avail_out((Op->avail_out() * TotalOut) / OutDivisor);
+        return 0;
+      });
 }
 
 #ifndef USE_LIBPROTOBUF_MUTATOR
@@ -251,11 +310,19 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
     DeflateOpCount = MaxDeflateOpCount;
   for (size_t i = 0; i < DeflateOpCount; i++) {
     DeflateOp *Op = Plan.add_deflate_ops();
+    uint8_t AvailIn;
+    POP(AvailIn);
+    AvailIn++;
+    uint8_t AvailOut;
+    POP(AvailOut);
+    AvailOut++;
     uint8_t KindChoice;
     POP(KindChoice);
     if (KindChoice < 32) {
       std::unique_ptr<class DeflateParams> DeflateParams =
           std::make_unique<class DeflateParams>();
+      DeflateParams->set_avail_in(AvailIn);
+      DeflateParams->set_avail_out(AvailOut);
       uint8_t LevelChoice;
       POP(LevelChoice);
       DeflateParams->set_level(ChooseLevel(LevelChoice));
@@ -266,19 +333,13 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
     } else {
       std::unique_ptr<class Deflate> Deflate =
           std::make_unique<class Deflate>();
+      Deflate->set_avail_in(AvailIn);
+      Deflate->set_avail_out(AvailOut);
       uint8_t FlushChoice;
       POP(FlushChoice);
       Deflate->set_flush(ChooseDeflateFlush(FlushChoice));
       Op->set_allocated_deflate(Deflate.release());
     }
-    uint8_t AvailIn;
-    POP(AvailIn);
-    AvailIn++;
-    Op->set_avail_in(AvailIn);
-    uint8_t AvailOut;
-    POP(AvailOut);
-    AvailOut++;
-    Op->set_avail_out(AvailOut);
   }
 
   size_t InflateOpCount;
@@ -288,17 +349,17 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
     InflateOpCount = MaxInflateOpCount;
   for (size_t i = 0; i < InflateOpCount; i++) {
     InflateOp *Op = Plan.add_inflate_ops();
-    std::unique_ptr<class Inflate> Inflate = std::make_unique<class Inflate>();
-    Inflate->set_flush(PB_Z_NO_FLUSH);
-    Op->set_allocated_inflate(Inflate.release());
     uint8_t AvailIn;
     POP(AvailIn);
     AvailIn++;
-    Op->set_avail_in(AvailIn);
     uint8_t AvailOut;
     POP(AvailOut);
     AvailOut++;
-    Op->set_avail_out(AvailOut);
+    std::unique_ptr<class Inflate> Inflate = std::make_unique<class Inflate>();
+    Inflate->set_avail_in(AvailIn);
+    Inflate->set_avail_out(AvailOut);
+    Inflate->set_flush(PB_Z_NO_FLUSH);
+    Op->set_allocated_inflate(Inflate.release());
   }
 
   size_t TailSize;
@@ -349,7 +410,7 @@ static void RunPlan(Plan &Plan) {
     fprintf(stderr, "\";\nchar next_out[%zu];\n", CompressedSize);
   }
   for (int i = 0; i < Plan.deflate_ops_size(); i++)
-    RunOp(&Strm, Plan.deflate_ops(i), i, Plan.deflate_ops_size());
+    VisitOp(Plan.deflate_ops(i), OpRunner(&Strm));
   Err = Deflate(&Strm, Z_FINISH);
   assert(Err == Z_STREAM_END);
   assert(Strm.avail_in == 0);
@@ -380,7 +441,7 @@ static void RunPlan(Plan &Plan) {
   Strm.next_out = Uncompressed.get();
   Strm.avail_out = Plan.data().size() + Plan.tail_size();
   for (int i = 0; i < Plan.inflate_ops_size(); i++) {
-    Err = RunOp(&Strm, Plan.inflate_ops(i), i, Plan.inflate_ops_size());
+    Err = VisitOp(Plan.inflate_ops(i), OpRunner(&Strm));
     if (Err == Z_NEED_DICT) {
       assert(Plan.dict().size() > 0 && Plan.window_bits() == WB_ZLIB);
       Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
