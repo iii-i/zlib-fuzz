@@ -394,12 +394,21 @@ static void FixupOps(google::protobuf::RepeatedPtrField<Op> *Ops,
                      bool IsDeflate) {
   int Pos = 0;
   for (int i = 0, size = Ops->size(); i < size; i++) {
-    const Op &Op = (*Ops)[i];
+    Op &Op = (*Ops)[i];
     if (Op.op_case() == 0 ||
         (IsDeflate && !Op.has_deflate() && !Op.has_deflate_params()) ||
         (!IsDeflate && !Op.has_inflate()))
       continue;
+    if (IsDeflate) {
+      if (Op.has_deflate() && (Op.deflate().flush() == PB_Z_FINISH ||
+                               Op.deflate().flush() == PB_Z_TREES))
+        Op.mutable_deflate()->set_flush(PB_Z_NO_FLUSH);
+    } else {
+      if (Op.has_inflate())
+        Op.mutable_inflate()->set_flush(PB_Z_NO_FLUSH);
+    }
     Ops->SwapElements(Pos, i);
+    Pos++;
   }
   Ops->DeleteSubrange(Pos, Ops->size() - Pos);
 }
