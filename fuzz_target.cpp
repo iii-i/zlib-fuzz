@@ -89,15 +89,8 @@ static int Inflate(z_stream *Strm, int Flush) {
   return Err;
 }
 
-static int RunOp(z_stream *Strm, const Op &Op, size_t i, size_t OpCount) {
-  uInt AvailIn0 = Strm->avail_in;
-  uInt AvailIn1 =
-      AvailIn0 < (uInt)Op.avail_in() ? AvailIn0 : (uInt)Op.avail_in();
-  uInt AvailOut0 = Strm->avail_out;
-  uInt AvailOut1 =
-      AvailOut0 < (uInt)Op.avail_out() ? AvailOut0 : (uInt)Op.avail_out();
-  Strm->avail_in = AvailIn1;
-  Strm->avail_out = AvailOut1;
+static int RunOpImpl(z_stream *Strm, const DeflateOp &Op, size_t i,
+                     size_t OpCount) {
   int Err;
   if (Op.has_deflate()) {
     Err = Deflate(Strm, Op.deflate().flush());
@@ -113,15 +106,40 @@ static int RunOp(z_stream *Strm, const Op &Op, size_t i, size_t OpCount) {
     if (Debug)
       fprintf(stderr, "%i;\n", Err);
     assert(Err == Z_OK || Err == Z_BUF_ERROR);
-  } else if (Op.has_inflate()) {
+  } else {
+    fprintf(stderr, "Unexpected deflate_ops[%zu/%zu].op_case() = %i\n", i,
+            OpCount, Op.op_case());
+    assert(0);
+  }
+  return Err;
+}
+
+static int RunOpImpl(z_stream *Strm, const InflateOp &Op, size_t i,
+                     size_t OpCount) {
+  int Err;
+  if (Op.has_inflate()) {
     Err = Inflate(Strm, Op.inflate().flush());
     assert(Err == Z_OK || Err == Z_STREAM_END || Err == Z_NEED_DICT ||
            Err == Z_BUF_ERROR);
   } else {
-    fprintf(stderr, "Unexpected Ops[%zu/%zu].op_case() = %i\n", i, OpCount,
-            Op.op_case());
+    fprintf(stderr, "Unexpected inflate_ops[%zu/%zu].op_case() = %i\n", i,
+            OpCount, Op.op_case());
     assert(0);
   }
+  return Err;
+}
+
+template <typename OpT>
+static int RunOp(z_stream *Strm, const OpT &Op, size_t i, size_t OpCount) {
+  uInt AvailIn0 = Strm->avail_in;
+  uInt AvailIn1 =
+      AvailIn0 < (uInt)Op.avail_in() ? AvailIn0 : (uInt)Op.avail_in();
+  uInt AvailOut0 = Strm->avail_out;
+  uInt AvailOut1 =
+      AvailOut0 < (uInt)Op.avail_out() ? AvailOut0 : (uInt)Op.avail_out();
+  Strm->avail_in = AvailIn1;
+  Strm->avail_out = AvailOut1;
+  int Err = RunOpImpl(Strm, Op, i, OpCount);
   uInt ConsumedIn = AvailIn1 - Strm->avail_in;
   Strm->avail_in = AvailIn0 - ConsumedIn;
   uInt ConsumedOut = AvailOut1 - Strm->avail_out;
@@ -130,18 +148,18 @@ static int RunOp(z_stream *Strm, const Op &Op, size_t i, size_t OpCount) {
 }
 
 template <typename OpsT>
-static void NormalizeOps(OpsT &Ops, uInt TotalIn, uInt TotalOut) {
+static void NormalizeOps(OpsT *Ops, uInt TotalIn, uInt TotalOut) {
   uInt InDivisor = 0;
   uInt OutDivisor = 0;
-  for (Op &Op : Ops) {
+  for (typename OpsT::value_type &Op : *Ops) {
     InDivisor += Op.avail_in();
     OutDivisor += Op.avail_out();
   }
   if (InDivisor != 0)
-    for (Op &Op : Ops)
+    for (typename OpsT::value_type &Op : *Ops)
       Op.set_avail_in((Op.avail_in() * TotalIn) / InDivisor);
   if (OutDivisor != 0)
-    for (Op &Op : Ops)
+    for (typename OpsT::value_type &Op : *Ops)
       Op.set_avail_out((Op.avail_out() * TotalOut) / OutDivisor);
 }
 
@@ -232,7 +250,7 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
   if (DeflateOpCount > MaxDeflateOpCount)
     DeflateOpCount = MaxDeflateOpCount;
   for (size_t i = 0; i < DeflateOpCount; i++) {
-    Op *Op = Plan.add_deflate_ops();
+    DeflateOp *Op = Plan.add_deflate_ops();
     uint8_t KindChoice;
     POP(KindChoice);
     if (KindChoice < 32) {
@@ -269,7 +287,7 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
   if (InflateOpCount > MaxInflateOpCount)
     InflateOpCount = MaxInflateOpCount;
   for (size_t i = 0; i < InflateOpCount; i++) {
-    Op *Op = Plan.add_inflate_ops();
+    InflateOp *Op = Plan.add_inflate_ops();
     std::unique_ptr<class Inflate> Inflate = std::make_unique<class Inflate>();
     Inflate->set_flush(PB_Z_NO_FLUSH);
     Op->set_allocated_inflate(Inflate.release());
@@ -302,7 +320,7 @@ static void FixupPlan(Plan *Plan) {
 static void RunPlan(Plan &Plan) {
   size_t CompressedSize =
       Plan.data().size() * 2 + (Plan.deflate_ops_size() + 1) * 128;
-  NormalizeOps(*Plan.mutable_deflate_ops(), Plan.data().size(), CompressedSize);
+  NormalizeOps(Plan.mutable_deflate_ops(), Plan.data().size(), CompressedSize);
   if (Debug)
     fprintf(stderr, "n_deflate_ops = %i;\n", Plan.deflate_ops_size());
 
@@ -342,7 +360,7 @@ static void RunPlan(Plan &Plan) {
   Err = deflateEnd(&Strm);
   assert(Err == Z_OK);
 
-  NormalizeOps(*Plan.mutable_inflate_ops(), ActualCompressedSize,
+  NormalizeOps(Plan.mutable_inflate_ops(), ActualCompressedSize,
                Plan.data().size());
   if (Debug)
     fprintf(stderr, "n_inflate_ops = %i;\n", Plan.inflate_ops_size());
@@ -390,23 +408,24 @@ static void RunPlan(Plan &Plan) {
 }
 
 #ifdef USE_LIBPROTOBUF_MUTATOR
-static void FixupOps(google::protobuf::RepeatedPtrField<Op> *Ops,
-                     bool IsDeflate) {
+static void FixupOp(DeflateOp *Op) {
+  if (Op->has_deflate() && (Op->deflate().flush() == PB_Z_FINISH ||
+                            Op->deflate().flush() == PB_Z_TREES))
+    Op->mutable_deflate()->set_flush(PB_Z_NO_FLUSH);
+}
+
+static void FixupOp(InflateOp *Op) {
+  if (Op->has_inflate())
+    Op->mutable_inflate()->set_flush(PB_Z_NO_FLUSH);
+}
+
+template <typename OpsT> static void FixupOps(OpsT *Ops) {
   int Pos = 0;
   for (int i = 0, size = Ops->size(); i < size; i++) {
-    Op &Op = (*Ops)[i];
-    if (Op.op_case() == 0 ||
-        (IsDeflate && !Op.has_deflate() && !Op.has_deflate_params()) ||
-        (!IsDeflate && !Op.has_inflate()))
+    typename OpsT::value_type &Op = (*Ops)[i];
+    if (Op.op_case() == 0)
       continue;
-    if (IsDeflate) {
-      if (Op.has_deflate() && (Op.deflate().flush() == PB_Z_FINISH ||
-                               Op.deflate().flush() == PB_Z_TREES))
-        Op.mutable_deflate()->set_flush(PB_Z_NO_FLUSH);
-    } else {
-      if (Op.has_inflate())
-        Op.mutable_inflate()->set_flush(PB_Z_NO_FLUSH);
-    }
+    FixupOp(&Op);
     Ops->SwapElements(Pos, i);
     Pos++;
   }
@@ -420,8 +439,8 @@ static protobuf_mutator::libfuzzer::PostProcessorRegistration<Plan> reg = {
         Plan->set_window_bits(WB_ZLIB);
       if (Plan->mem_level() == MEM_LEVEL_DEFAULT)
         Plan->set_mem_level(MEM_LEVEL8);
-      FixupOps(Plan->mutable_deflate_ops(), true);
-      FixupOps(Plan->mutable_inflate_ops(), false);
+      FixupOps(Plan->mutable_deflate_ops());
+      FixupOps(Plan->mutable_inflate_ops());
       if (Plan->window_bits() == WB_GZIP)
         Plan->clear_dict();
       Plan->set_tail_size(Plan->tail_size() & 0xff);

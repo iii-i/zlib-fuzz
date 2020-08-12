@@ -65,13 +65,20 @@ message Inflate {
   Flush flush = 3;
 }
 
-message Op {
+message DeflateOp {
   int32 avail_in = 1;
   int32 avail_out = 2;
   oneof op {
     Deflate deflate = 3;
     DeflateParams deflate_params = 4;
-    Inflate inflate = 5;
+  }
+}
+
+message InflateOp {
+  int32 avail_in = 1;
+  int32 avail_out = 2;
+  oneof op {
+    Inflate inflate = 3;
   }
 }
 
@@ -82,7 +89,7 @@ message Plan {
   MemLevel mem_level = 4;
   Strategy strategy = 5;
   bytes dict = 6;
-  repeated Op deflate_ops = 7;
-  repeated Op inflate_ops = 8;
+  repeated DeflateOp deflate_ops = 7;
+  repeated InflateOp inflate_ops = 8;
   int32 tail_size = 9;
 }
