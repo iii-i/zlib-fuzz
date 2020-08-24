@@ -94,4 +94,5 @@ message Plan {
   repeated DeflateOp deflate_ops = 7;
   repeated InflateOp inflate_ops = 8;
   int32 tail_size = 9;
+  repeated int32 bit_flips = 10;
 }

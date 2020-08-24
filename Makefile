@@ -10,10 +10,10 @@ LIBPROTOBUF=protobuf
 all: fuzz fuzz_libprotobuf_mutator
 
 fuzz: fuzz_target.o fuzz_target.pb.o $(LIBZ_A)
-	$(CXX) $(LDFLAGS) -fsanitize=address,fuzzer fuzz_target.o fuzz_target.pb.o -o $@ $(LIBZ_A) -l$(LIBPROTOBUF)
+	$(CXX) $(LDFLAGS) -fsanitize=fuzzer fuzz_target.o fuzz_target.pb.o -o $@ $(LIBZ_A) -l$(LIBPROTOBUF)
 
 fuzz_libprotobuf_mutator: fuzz_target_libprotobuf_mutator.o fuzz_target.pb.o $(LIBZ_A)
-	$(CXX) $(LDFLAGS) -fsanitize=address,fuzzer fuzz_target_libprotobuf_mutator.o fuzz_target.pb.o -o $@ $(LIBZ_A) -lprotobuf-mutator-libfuzzer -lprotobuf-mutator -l$(LIBPROTOBUF)
+	$(CXX) $(LDFLAGS) -fsanitize=fuzzer fuzz_target_libprotobuf_mutator.o fuzz_target.pb.o -o $@ $(LIBZ_A) -lprotobuf-mutator-libfuzzer -lprotobuf-mutator -l$(LIBPROTOBUF)
 
 # For building for afl, run
 # make ZLIB=path/to/zlib AFL=path/to/AFLplusplus afl
@@ -30,7 +30,7 @@ afl: a.out_afl
 	@echo "Note: to resume a previous session, specify '-i -' as input directory"
 
 a.out_afl: fuzz_target_afl.o fuzz_target.pb_afl.o afl_driver.o $(LIBZ_A_AFL)
-	$(AFLCXX) -fsanitize=address -o $@ $^ -lprotobuf
+	$(AFLCXX) $(LDFLAGS) -o $@ $^ -l$(LIBPROTOBUF)
 
 $(LIBZ_A): $(LIBZ_SOURCES)
 	cd $(ZLIB) && $(MAKE) libz.a
@@ -40,13 +40,13 @@ $(LIBZ_A_AFL): $(LIBZ_SOURCES)
 	cd $(ZLIB) && mv libz.a $@
 
 fuzz_target.o: fuzz_target.cpp fuzz_target.pb.h | fmt
-	$(CXX) $(CXXFLAGS) -fsanitize=address,fuzzer -DZLIB_CONST -c fuzz_target.cpp -o $@
+	$(CXX) $(CXXFLAGS) -fsanitize=fuzzer -DZLIB_CONST -c fuzz_target.cpp -o $@
 
 fuzz_target_libprotobuf_mutator.o: fuzz_target.cpp fuzz_target.pb.h | fmt
-	$(CXX) $(CXXFLAGS) -fsanitize=address,fuzzer -DUSE_LIBPROTOBUF_MUTATOR -DZLIB_CONST -c fuzz_target.cpp -o $@
+	$(CXX) $(CXXFLAGS) -fsanitize=fuzzer -DUSE_LIBPROTOBUF_MUTATOR -DZLIB_CONST -c fuzz_target.cpp -o $@
 
 fuzz_target_afl.o: fuzz_target.cpp fuzz_target.pb.h
-	$(AFLCXX) $(CXXFLAGS) -fsanitize=address -DZLIB_CONST -c fuzz_target.cpp -o $@
+	$(AFLCXX) $(CXXFLAGS) -fsanitize=-DZLIB_CONST -c fuzz_target.cpp -o $@
 
 fuzz_target.pb.o: fuzz_target.pb.cc fuzz_target.pb.h
 	$(CXX) $(CXXFLAGS) -c fuzz_target.pb.cc

@@ -118,13 +118,15 @@ struct Avail {
 
 struct OpRunner {
   z_stream *const Strm;
+  const bool Check;
 
-  OpRunner(z_stream *Strm) : Strm(Strm) {}
+  OpRunner(z_stream *Strm, bool Check) : Strm(Strm), Check(Check) {}
 
   int operator()(const class Deflate &Op) const {
     Avail Avail(Strm, Op);
     int Err = Deflate(Strm, Op.flush());
-    assert(Err == Z_OK || Err == Z_BUF_ERROR);
+    if (Check)
+      assert(Err == Z_OK || Err == Z_BUF_ERROR);
     return Err;
   }
 
@@ -137,15 +139,17 @@ struct OpRunner {
     int Err = deflateParams(Strm, Op.level(), Op.strategy());
     if (Debug)
       fprintf(stderr, "%i;\n", Err);
-    assert(Err == Z_OK || Err == Z_BUF_ERROR);
+    if (Check)
+      assert(Err == Z_OK || Err == Z_BUF_ERROR);
     return Err;
   }
 
   int operator()(const class Inflate &Op) const {
     Avail Avail(Strm, Op);
     int Err = Inflate(Strm, Op.flush());
-    assert(Err == Z_OK || Err == Z_STREAM_END || Err == Z_NEED_DICT ||
-           Err == Z_BUF_ERROR);
+    if (Check)
+      assert(Err == Z_OK || Err == Z_STREAM_END || Err == Z_NEED_DICT ||
+             Err == Z_BUF_ERROR);
     return Err;
   }
 };
@@ -271,11 +275,11 @@ static Flush ChooseDeflateFlush(uint8_t Choice) {
 
 static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
 #define POP(X)                                                                 \
-  if (Size == 0)                                                               \
+  if (Size < sizeof(X))                                                        \
     return false;                                                              \
-  (X) = *Data;                                                                 \
-  Data++;                                                                      \
-  Size--;
+  memcpy(&X, Data, sizeof(X));                                                 \
+  Data += sizeof(X);                                                           \
+  Size -= sizeof(X);
 
   uint8_t InitialLevelChoice;
   POP(InitialLevelChoice);
@@ -291,7 +295,7 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
   Plan.set_strategy(ChooseStrategy(InitialStrategyChoice));
 
   if (Plan.window_bits() != WB_GZIP) {
-    size_t DictLen;
+    uint8_t DictLen;
     POP(DictLen);
     if (DictLen > 0 && DictLen < 128) {
       size_t MaxDictLen = Size / 4;
@@ -303,7 +307,7 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
     }
   }
 
-  size_t DeflateOpCount;
+  uint8_t DeflateOpCount;
   POP(DeflateOpCount);
   size_t MaxDeflateOpCount = Size / 2;
   if (DeflateOpCount > MaxDeflateOpCount)
@@ -342,7 +346,7 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
     }
   }
 
-  size_t InflateOpCount;
+  uint8_t InflateOpCount;
   POP(InflateOpCount);
   size_t MaxInflateOpCount = MaxDeflateOpCount * 2;
   if (InflateOpCount > MaxInflateOpCount)
@@ -362,9 +366,18 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
     Op->set_allocated_inflate(Inflate.release());
   }
 
-  size_t TailSize;
+  uint8_t TailSize;
   POP(TailSize);
   Plan.set_tail_size(TailSize);
+
+  uint8_t BitFlipCount;
+  POP(BitFlipCount);
+  for (size_t i = 0; i < BitFlipCount; i++) {
+    uint16_t Index;
+    POP(Index);
+    Plan.add_bit_flips(Index);
+  }
+
 #undef POP
 
   Plan.set_data(Data, Size);
@@ -376,6 +389,61 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
 static void FixupPlan(Plan *Plan) {
   if (Plan->data().size() == 0)
     Plan->set_data("!");
+}
+
+static void RunInflate(const Plan &Plan, const uint8_t *Compressed,
+                       uInt ActualCompressedSize, bool Check) {
+  if (Debug)
+    fprintf(stderr, "n_inflate_ops = %i;\n", Plan.inflate_ops_size());
+  z_stream Strm;
+  memset(&Strm, 0, sizeof(Strm));
+  int Err = inflateInit2(&Strm, Plan.window_bits());
+  if (Debug)
+    fprintf(stderr, "inflateInit2(&Strm, %i) = %i;\n", Plan.window_bits(), Err);
+  assert(Err == Z_OK);
+  if (Plan.dict().size() > 0 && Plan.window_bits() == WB_RAW) {
+    Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
+                               Plan.dict().size());
+    assert(Err == Z_OK);
+  }
+  std::unique_ptr<uint8_t[]> Uncompressed(
+      new uint8_t[Plan.data().size() + Plan.tail_size()]);
+  Strm.next_in = Compressed;
+  Strm.avail_in = ActualCompressedSize;
+  Strm.next_out = Uncompressed.get();
+  Strm.avail_out = Plan.data().size() + Plan.tail_size();
+  for (int i = 0; i < Plan.inflate_ops_size(); i++) {
+    Err = VisitOp(Plan.inflate_ops(i), OpRunner(&Strm, Check));
+    if (Err == Z_NEED_DICT) {
+      if (Check)
+        assert(Plan.dict().size() > 0 && Plan.window_bits() == WB_ZLIB);
+      Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
+                                 Plan.dict().size());
+      if (Check)
+        assert(Err == Z_OK);
+    }
+  }
+  if (Err != Z_STREAM_END) {
+    Err = Inflate(&Strm, Z_NO_FLUSH);
+    if (Err == Z_NEED_DICT) {
+      if (Check)
+        assert(Plan.dict().size() > 0 && Plan.window_bits() == WB_ZLIB);
+      Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
+                                 Plan.dict().size());
+      if (Check)
+        assert(Err == Z_OK);
+      Err = Inflate(&Strm, Z_NO_FLUSH);
+    }
+  }
+  if (Check) {
+    assert(Err == Z_STREAM_END);
+    assert(Strm.avail_in == 0);
+    assert(Strm.avail_out == (uInt)Plan.tail_size());
+    assert(memcmp(Uncompressed.get(), Plan.data().c_str(),
+                  Plan.data().size()) == 0);
+  }
+  Err = inflateEnd(&Strm);
+  assert(Err == Z_OK);
 }
 
 static void RunPlan(Plan &Plan) {
@@ -410,7 +478,7 @@ static void RunPlan(Plan &Plan) {
     fprintf(stderr, "\";\nchar next_out[%zu];\n", CompressedSize);
   }
   for (int i = 0; i < Plan.deflate_ops_size(); i++)
-    VisitOp(Plan.deflate_ops(i), OpRunner(&Strm));
+    VisitOp(Plan.deflate_ops(i), OpRunner(&Strm, true));
   Err = Deflate(&Strm, Z_FINISH);
   assert(Err == Z_STREAM_END);
   assert(Strm.avail_in == 0);
@@ -423,49 +491,16 @@ static void RunPlan(Plan &Plan) {
 
   NormalizeOps(Plan.mutable_inflate_ops(), ActualCompressedSize,
                Plan.data().size());
-  if (Debug)
-    fprintf(stderr, "n_inflate_ops = %i;\n", Plan.inflate_ops_size());
 
-  std::unique_ptr<uint8_t[]> Uncompressed(new uint8_t[Plan.data().size()]);
-  Err = inflateInit2(&Strm, Plan.window_bits());
+  RunInflate(Plan, Compressed.get(), ActualCompressedSize, true);
+
   if (Debug)
-    fprintf(stderr, "inflateInit2(&Strm, %i) = %i;\n", Plan.window_bits(), Err);
-  assert(Err == Z_OK);
-  if (Plan.dict().size() > 0 && Plan.window_bits() == WB_RAW) {
-    Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
-                               Plan.dict().size());
-    assert(Err == Z_OK);
+    fprintf(stderr, "n_bit_flips = %i;\n", Plan.bit_flips_size());
+  for (int i = 0; i < Plan.bit_flips_size(); i++) {
+    int index = Plan.bit_flips(i) % (ActualCompressedSize * 8);
+    Compressed[index / 8] ^= (1 << (index % 8));
   }
-  Strm.next_in = Compressed.get();
-  Strm.avail_in = ActualCompressedSize;
-  Strm.next_out = Uncompressed.get();
-  Strm.avail_out = Plan.data().size() + Plan.tail_size();
-  for (int i = 0; i < Plan.inflate_ops_size(); i++) {
-    Err = VisitOp(Plan.inflate_ops(i), OpRunner(&Strm));
-    if (Err == Z_NEED_DICT) {
-      assert(Plan.dict().size() > 0 && Plan.window_bits() == WB_ZLIB);
-      Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
-                                 Plan.dict().size());
-      assert(Err == Z_OK);
-    }
-  }
-  if (Err != Z_STREAM_END) {
-    Err = Inflate(&Strm, Z_NO_FLUSH);
-    if (Err == Z_NEED_DICT) {
-      assert(Plan.dict().size() > 0 && Plan.window_bits() == WB_ZLIB);
-      Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
-                                 Plan.dict().size());
-      assert(Err == Z_OK);
-      Err = Inflate(&Strm, Z_NO_FLUSH);
-    }
-  }
-  assert(Err == Z_STREAM_END);
-  assert(Strm.avail_in == 0);
-  assert(Strm.avail_out == (uInt)Plan.tail_size());
-  assert(memcmp(Uncompressed.get(), Plan.data().c_str(), Plan.data().size()) ==
-         0);
-  Err = inflateEnd(&Strm);
-  assert(Err == Z_OK);
+  RunInflate(Plan, Compressed.get(), ActualCompressedSize, false);
 }
 
 #ifdef USE_LIBPROTOBUF_MUTATOR

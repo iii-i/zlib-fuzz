@@ -1,5 +1,6 @@
 *.o
 *.o.tmp
+.idea/
 a.out_afl
 crash-*
 fuzz
