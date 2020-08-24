@@ -29,7 +29,7 @@ afl: a.out_afl
 	@echo
 	@echo "Note: to resume a previous session, specify '-i -' as input directory"
 
-a.out_afl: fuzz_target_afl.o fuzz_target.pb_afl.o afl_driver.o $(LIBZ_A_AFL)
+fuzz_afl: fuzz_target_afl.o fuzz_target.pb_afl.o afl_driver.o $(LIBZ_A_AFL)
 	$(AFLCXX) $(LDFLAGS) -o $@ $^ -l$(LIBPROTOBUF)
 
 $(LIBZ_A): $(LIBZ_SOURCES)
@@ -46,7 +46,7 @@ fuzz_target_libprotobuf_mutator.o: fuzz_target.cpp fuzz_target.pb.h | fmt
 	$(CXX) $(CXXFLAGS) -fsanitize=fuzzer -DUSE_LIBPROTOBUF_MUTATOR -DZLIB_CONST -c fuzz_target.cpp -o $@
 
 fuzz_target_afl.o: fuzz_target.cpp fuzz_target.pb.h
-	$(AFLCXX) $(CXXFLAGS) -fsanitize=-DZLIB_CONST -c fuzz_target.cpp -o $@
+	$(AFLCXX) $(CXXFLAGS) -DZLIB_CONST -c fuzz_target.cpp -o $@
 
 fuzz_target.pb.o: fuzz_target.pb.cc fuzz_target.pb.h
 	$(CXX) $(CXXFLAGS) -c fuzz_target.pb.cc
