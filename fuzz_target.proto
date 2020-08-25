@@ -92,7 +92,8 @@ message Plan {
   Strategy strategy = 5;
   bytes dict = 6;
   repeated DeflateOp deflate_ops = 7;
-  repeated InflateOp inflate_ops = 8;
-  int32 tail_size = 9;
-  repeated int32 bit_flips = 10;
+  repeated int32 finish_avail_outs = 8;
+  repeated InflateOp inflate_ops = 9;
+  int32 tail_size = 10;
+  repeated int32 bit_flips = 11;
 }

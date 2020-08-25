@@ -96,17 +96,18 @@ struct Avail {
   const uInt AvailOut0;
   const uInt AvailOut1;
 
-  template <typename OpT>
-  Avail(z_stream *Strm, const OpT &Op)
+  Avail(z_stream *Strm, uInt MaxAvailIn, uInt MaxAvailOut)
       : Strm(Strm), AvailIn0(Strm->avail_in),
-        AvailIn1(AvailIn0 < (uInt)Op.avail_in() ? AvailIn0
-                                                : (uInt)Op.avail_in()),
+        AvailIn1(AvailIn0 < MaxAvailIn ? AvailIn0 : MaxAvailIn),
         AvailOut0(Strm->avail_out),
-        AvailOut1(AvailOut0 < (uInt)Op.avail_out() ? AvailOut0
-                                                   : (uInt)Op.avail_out()) {
+        AvailOut1(AvailOut0 < MaxAvailOut ? AvailOut0 : MaxAvailOut) {
     Strm->avail_in = AvailIn1;
     Strm->avail_out = AvailOut1;
   }
+
+  template <typename OpT>
+  Avail(z_stream *Strm, const OpT &Op)
+      : Avail(Strm, (uInt)Op.avail_in(), (uInt)Op.avail_out()) {}
 
   ~Avail() {
     uInt ConsumedIn = AvailIn1 - Strm->avail_in;
@@ -346,6 +347,14 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
     }
   }
 
+  uint8_t FinishCount;
+  POP(FinishCount);
+  for (size_t i = 0; i < FinishCount; i++) {
+    uint8_t AvailOut;
+    POP(AvailOut);
+    Plan.add_finish_avail_outs(AvailOut);
+  }
+
   uint8_t InflateOpCount;
   POP(InflateOpCount);
   size_t MaxInflateOpCount = MaxDeflateOpCount * 2;
@@ -479,8 +488,28 @@ static void RunPlan(Plan &Plan) {
   }
   for (int i = 0; i < Plan.deflate_ops_size(); i++)
     VisitOp(Plan.deflate_ops(i), OpRunner(&Strm, true));
-  Err = Deflate(&Strm, Z_FINISH);
-  assert(Err == Z_STREAM_END);
+  int FinishCount = Plan.finish_avail_outs_size();
+  uInt FinishAvailOutDenominator = 0;
+  for (int i = 0; i < FinishCount; i++)
+    FinishAvailOutDenominator += Plan.finish_avail_outs(i);
+  if (FinishAvailOutDenominator == 0) {
+    Err = Z_OK;
+  } else {
+    uInt FinishAvailOutNumerator = Strm.avail_out;
+    for (int i = 0; i < FinishCount; i++) {
+      Avail Avail(&Strm, Strm.avail_in,
+                  (Plan.finish_avail_outs(i) * FinishAvailOutNumerator) /
+                      FinishAvailOutDenominator);
+      Err = Deflate(&Strm, Z_FINISH);
+      if (Err == Z_STREAM_END)
+        break;
+      assert(Err == Z_OK || Err == Z_BUF_ERROR);
+    }
+  }
+  if (Err != Z_STREAM_END) {
+    Err = Deflate(&Strm, Z_FINISH);
+    assert(Err == Z_STREAM_END);
+  }
   assert(Strm.avail_in == 0);
   uInt ActualCompressedSize = CompressedSize - Strm.avail_out;
   assert(ActualCompressedSize == Strm.total_out);

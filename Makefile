@@ -18,7 +18,7 @@ fuzz_libprotobuf_mutator: fuzz_target_libprotobuf_mutator.o fuzz_target.pb.o $(L
 # For building for afl, run
 # make ZLIB=path/to/zlib AFL=path/to/AFLplusplus afl
 .PHONY: afl
-afl: a.out_afl
+afl: fuzz_afl
 	@echo "Now kick off afl as follows:"
 	@echo "$ afl-fuzz -m none -i in -o out ./$^"
 	@echo
@@ -45,7 +45,7 @@ fuzz_target.o: fuzz_target.cpp fuzz_target.pb.h | fmt
 fuzz_target_libprotobuf_mutator.o: fuzz_target.cpp fuzz_target.pb.h | fmt
 	$(CXX) $(CXXFLAGS) -fsanitize=fuzzer -DUSE_LIBPROTOBUF_MUTATOR -DZLIB_CONST -c fuzz_target.cpp -o $@
 
-fuzz_target_afl.o: fuzz_target.cpp fuzz_target.pb.h
+fuzz_target_afl.o: fuzz_target.cpp fuzz_target.pb.h | fmt
 	$(AFLCXX) $(CXXFLAGS) -DZLIB_CONST -c fuzz_target.cpp -o $@
 
 fuzz_target.pb.o: fuzz_target.pb.cc fuzz_target.pb.h
