@@ -8,5 +8,6 @@ fuzz-*
 fuzz_libprotobuf_mutator
 fuzz_target.pb.cc
 fuzz_target.pb.h
+libprotobuf-mutator/
 minimized-*
 out/
