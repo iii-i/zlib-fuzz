@@ -1,15 +1,20 @@
+# Required environment variables:
+# - ZLIB: path to a zlib build directory configured with libFuzzer
+# - ZLIB_AFL: path to a (different) zlib build directory configured with AFL
+# Required programs in $PATH:
+# - afl-clang-fast++
+# - clang++
+
 CXX=clang++
-AFLCC=$(AFL)/afl-clang-fast
-AFLCXX=$(AFL)/afl-clang-fast++
+AFLCXX=afl-clang-fast++
 PROTOBUF_PATH=libprotobuf-mutator/build/external.protobuf
 PROTOC=$(PROTOBUF_PATH)/bin/protoc
 override CXXFLAGS:=-std=c++17 -fPIC -Wall -Wextra -Werror -O2 -g -isystem libprotobuf-mutator -isystem $(PROTOBUF_PATH)/include $(CXXFLAGS)
 override LDFLAGS:=-Llibprotobuf-mutator/build/src -Llibprotobuf-mutator/build/src/libfuzzer -L$(PROTOBUF_PATH)/lib64 $(LDFLAGS)
 LIBZ_A:=$(ZLIB)/libz.a
-LIBZ_A_AFL:=$(ZLIB)/libz_afl.a
-LIBZ_SOURCES:=$(foreach file,$(shell git -C $(ZLIB) ls-files),$(ZLIB)/$(file))
+LIBZ_A_AFL:=$(ZLIB_AFL)/libz.a
 
-all: fuzz fuzz_libprotobuf_mutator
+all: fuzz fuzz_libprotobuf_mutator fuzz_afl
 
 fuzz: fuzz_target.o fuzz_target.pb.o $(LIBZ_A)
 	$(CXX) $(LDFLAGS) -fsanitize=fuzzer fuzz_target.o fuzz_target.pb.o -o $@ $(LIBZ_A) -lprotobufd
@@ -34,12 +39,11 @@ afl: fuzz_afl
 fuzz_afl: fuzz_target_afl.o fuzz_target.pb_afl.o afl_driver.o $(LIBZ_A_AFL)
 	$(AFLCXX) $(LDFLAGS) -o $@ $^ -lprotobufd
 
-$(LIBZ_A): $(LIBZ_SOURCES)
+$(LIBZ_A): $(foreach file,$(shell git -C $(ZLIB) ls-files),$(ZLIB)/$(file))
 	cd $(ZLIB) && $(MAKE) libz.a
 
-$(LIBZ_A_AFL): $(LIBZ_SOURCES)
-	cd $(ZLIB) && $(MAKE) libz.a CC=$(AFLCC)
-	cd $(ZLIB) && mv libz.a $@
+$(LIBZ_A_AFL): $(foreach file,$(shell git -C $(ZLIB_AFL) ls-files),$(ZLIB_AFL)/$(file))
+	cd $(ZLIB_AFL) && $(MAKE) libz.a
 
 fuzz_target.o: fuzz_target.cpp fuzz_target.pb.h | fmt
 	$(CXX) $(CXXFLAGS) -fsanitize=fuzzer -DZLIB_CONST -c fuzz_target.cpp -o $@
