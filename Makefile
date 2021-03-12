@@ -5,27 +5,35 @@
 # - afl-clang-fast++
 # - clang++
 
+O?=
+ifeq ($(O),)
+	OUTPUT=./
+else
+	OUTPUT=$(O)/
+endif
+
 CXX=clang++
 AFLCXX=afl-clang-fast++
-PROTOBUF_PATH=libprotobuf-mutator/build/external.protobuf
+PROTOBUF_PATH=$(OUTPUT)libprotobuf-mutator/build/external.protobuf
 PROTOC=$(PROTOBUF_PATH)/bin/protoc
-override CXXFLAGS:=-std=c++17 -fPIC -Wall -Wextra -Werror -O2 -g -isystem libprotobuf-mutator -isystem $(PROTOBUF_PATH)/include $(CXXFLAGS)
-override LDFLAGS:=-Llibprotobuf-mutator/build/src -Llibprotobuf-mutator/build/src/libfuzzer -L$(PROTOBUF_PATH)/lib64 $(LDFLAGS)
+override CXXFLAGS:=-std=c++17 -fPIC -Wall -Wextra -Werror -O2 -g -isystem $(OUTPUT)libprotobuf-mutator -isystem $(PROTOBUF_PATH)/include $(CXXFLAGS)
+override LDFLAGS:=-L$(OUTPUT)libprotobuf-mutator/build/src -L$(OUTPUT)libprotobuf-mutator/build/src/libfuzzer -L$(PROTOBUF_PATH)/lib $(LDFLAGS)
 LIBZ_A:=$(ZLIB)/libz.a
 LIBZ_A_AFL:=$(ZLIB_AFL)/libz.a
 
-all: fuzz fuzz_libprotobuf_mutator fuzz_afl
+.PHONY: all
+all: $(OUTPUT)fuzz $(OUTPUT)fuzz_libprotobuf_mutator $(OUTPUT)fuzz_afl
 
-fuzz: fuzz_target.o fuzz_target.pb.o $(LIBZ_A)
-	$(CXX) $(LDFLAGS) -fsanitize=fuzzer fuzz_target.o fuzz_target.pb.o -o $@ $(LIBZ_A) -lprotobufd
+$(OUTPUT)fuzz: $(OUTPUT)fuzz_target.o $(OUTPUT)fuzz_target.pb.o $(LIBZ_A)
+	$(CXX) $(LDFLAGS) -fsanitize=fuzzer $(OUTPUT)fuzz_target.o $(OUTPUT)fuzz_target.pb.o -o $@ $(LIBZ_A) -lprotobufd
 
-fuzz_libprotobuf_mutator: fuzz_target_libprotobuf_mutator.o fuzz_target.pb.o $(LIBZ_A)
-	$(CXX) $(LDFLAGS) -fsanitize=fuzzer fuzz_target_libprotobuf_mutator.o fuzz_target.pb.o -o $@ $(LIBZ_A) -lprotobuf-mutator-libfuzzer -lprotobuf-mutator -lprotobufd
+$(OUTPUT)fuzz_libprotobuf_mutator: $(OUTPUT)fuzz_target_libprotobuf_mutator.o $(OUTPUT)fuzz_target.pb.o $(LIBZ_A)
+	$(CXX) $(LDFLAGS) -fsanitize=fuzzer $(OUTPUT)fuzz_target_libprotobuf_mutator.o $(OUTPUT)fuzz_target.pb.o -o $@ $(LIBZ_A) -lprotobuf-mutator-libfuzzer -lprotobuf-mutator -lprotobufd
 
 # For building for afl, run
 # make ZLIB=path/to/zlib AFL=path/to/AFLplusplus afl
 .PHONY: afl
-afl: fuzz_afl
+afl: $(OUTPUT)fuzz_afl
 	@echo "Now kick off afl as follows:"
 	@echo "$ afl-fuzz -m none -i in -o out ./$^"
 	@echo
@@ -36,7 +44,7 @@ afl: fuzz_afl
 	@echo
 	@echo "Note: to resume a previous session, specify '-i -' as input directory"
 
-fuzz_afl: fuzz_target_afl.o fuzz_target.pb_afl.o afl_driver.o $(LIBZ_A_AFL)
+$(OUTPUT)fuzz_afl: $(OUTPUT)fuzz_target_afl.o $(OUTPUT)fuzz_target.pb_afl.o $(OUTPUT)afl_driver.o $(LIBZ_A_AFL)
 	$(AFLCXX) $(LDFLAGS) -o $@ $^ -lprotobufd
 
 $(LIBZ_A): $(foreach file,$(shell git -C $(ZLIB) ls-files),$(ZLIB)/$(file))
@@ -45,34 +53,37 @@ $(LIBZ_A): $(foreach file,$(shell git -C $(ZLIB) ls-files),$(ZLIB)/$(file))
 $(LIBZ_A_AFL): $(foreach file,$(shell git -C $(ZLIB_AFL) ls-files),$(ZLIB_AFL)/$(file))
 	cd $(ZLIB_AFL) && $(MAKE) libz.a
 
-fuzz_target.o: fuzz_target.cpp fuzz_target.pb.h | fmt
-	$(CXX) $(CXXFLAGS) -fsanitize=fuzzer -DZLIB_CONST -c fuzz_target.cpp -o $@
+$(OUTPUT)fuzz_target.o: fuzz_target.cpp $(OUTPUT)fuzz_target.pb.h | fmt
+	$(CXX) $(CXXFLAGS) -fsanitize=fuzzer -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
 
-fuzz_target_libprotobuf_mutator.o: fuzz_target.cpp fuzz_target.pb.h | fmt
-	$(CXX) $(CXXFLAGS) -fsanitize=fuzzer -DUSE_LIBPROTOBUF_MUTATOR -DZLIB_CONST -c fuzz_target.cpp -o $@
+$(OUTPUT)fuzz_target_libprotobuf_mutator.o: fuzz_target.cpp $(OUTPUT)fuzz_target.pb.h | fmt
+	$(CXX) $(CXXFLAGS) -fsanitize=fuzzer -DUSE_LIBPROTOBUF_MUTATOR -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
 
-fuzz_target_afl.o: fuzz_target.cpp fuzz_target.pb.h | fmt
-	$(AFLCXX) $(CXXFLAGS) -DZLIB_CONST -c fuzz_target.cpp -o $@
+$(OUTPUT)fuzz_target_afl.o: fuzz_target.cpp $(OUTPUT)fuzz_target.pb.h | fmt
+	$(AFLCXX) $(CXXFLAGS) -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
 
-fuzz_target.pb.o: fuzz_target.pb.cc fuzz_target.pb.h
-	$(CXX) $(CXXFLAGS) -c fuzz_target.pb.cc
+$(OUTPUT)fuzz_target.pb.o: $(OUTPUT)fuzz_target.pb.cc $(OUTPUT)fuzz_target.pb.h
+	$(CXX) $(CXXFLAGS) -c $(OUTPUT)fuzz_target.pb.cc -o $@
 
-fuzz_target.pb_afl.o: fuzz_target.pb.cc fuzz_target.pb.h
-	$(AFLCXX) $(CXXFLAGS) -c fuzz_target.pb.cc -o $@
+$(OUTPUT)fuzz_target.pb_afl.o: $(OUTPUT)fuzz_target.pb.cc $(OUTPUT)fuzz_target.pb.h
+	$(AFLCXX) $(CXXFLAGS) -c $(OUTPUT)fuzz_target.pb.cc -o $@
 
-fuzz_target.pb.cc fuzz_target.pb.h: fuzz_target.proto $(PROTOC)
-	$(PROTOC) --cpp_out=. fuzz_target.proto
+$(OUTPUT)fuzz_target.pb.cc $(OUTPUT)fuzz_target.pb.h: fuzz_target.proto $(PROTOC)
+	$(PROTOC) --cpp_out=$(OUTPUT) fuzz_target.proto
 
-libprotobuf-mutator/CMakeLists.txt: libprotobuf-mutator.commit
-	mkdir -p libprotobuf-mutator && \
-		cd libprotobuf-mutator && \
+$(OUTPUT)afl_driver.o: afl_driver.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+
+$(OUTPUT)libprotobuf-mutator/CMakeLists.txt: libprotobuf-mutator.commit
+	mkdir -p $(OUTPUT)libprotobuf-mutator && \
+		cd $(OUTPUT)libprotobuf-mutator && \
 		git init && \
-		git fetch https://github.com/iii-i/libprotobuf-mutator.git refs/heads/issue-131 && \
+		git fetch https://github.com/google/libprotobuf-mutator.git && \
 		git checkout $(shell cat libprotobuf-mutator.commit)
 
-libprotobuf-mutator/build/Makefile: libprotobuf-mutator/CMakeLists.txt
-	mkdir -p libprotobuf-mutator/build && \
-		cd libprotobuf-mutator/build && \
+$(OUTPUT)libprotobuf-mutator/build/Makefile: $(OUTPUT)libprotobuf-mutator/CMakeLists.txt
+	mkdir -p $(OUTPUT)libprotobuf-mutator/build && \
+		cd $(OUTPUT)libprotobuf-mutator/build && \
 		cmake \
 			.. \
 			-DCMAKE_C_COMPILER=clang \
@@ -80,8 +91,8 @@ libprotobuf-mutator/build/Makefile: libprotobuf-mutator/CMakeLists.txt
 			-DCMAKE_BUILD_TYPE=Debug \
 			-DLIB_PROTO_MUTATOR_DOWNLOAD_PROTOBUF=ON
 
-$(PROTOC): libprotobuf-mutator/build/Makefile
-	cd libprotobuf-mutator/build && $(MAKE)
+$(PROTOC): $(OUTPUT)libprotobuf-mutator/build/Makefile
+	cd $(OUTPUT)libprotobuf-mutator/build && $(MAKE)
 
 .PHONY: fmt
 fmt:
