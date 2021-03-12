@@ -7,7 +7,6 @@ fuzz_libprotobuf_mutator
 fuzz_target.pb.cc
 fuzz_target.pb.h
 .idea/
-libprotobuf-mutator/
 minimized-*
 *.o
 *.o.tmp

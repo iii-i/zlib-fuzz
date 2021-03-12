@@ -16,7 +16,7 @@ CXX=clang++
 AFLCXX=afl-clang-fast++
 PROTOBUF_PATH=$(OUTPUT)libprotobuf-mutator/build/external.protobuf
 PROTOC=$(PROTOBUF_PATH)/bin/protoc
-override CXXFLAGS:=-std=c++17 -fPIC -Wall -Wextra -Werror -O2 -g -isystem $(OUTPUT)libprotobuf-mutator -isystem $(PROTOBUF_PATH)/include $(CXXFLAGS)
+override CXXFLAGS:=-std=c++17 -fPIC -Wall -Wextra -Werror -O2 -g -isystem libprotobuf-mutator -isystem $(PROTOBUF_PATH)/include $(CXXFLAGS)
 override LDFLAGS:=-L$(OUTPUT)libprotobuf-mutator/build/src -L$(OUTPUT)libprotobuf-mutator/build/src/libfuzzer -L$(PROTOBUF_PATH)/lib $(LDFLAGS)
 LIBZ_A:=$(ZLIB)/libz.a
 LIBZ_A_AFL:=$(ZLIB_AFL)/libz.a
@@ -74,18 +74,11 @@ $(OUTPUT)fuzz_target.pb.cc $(OUTPUT)fuzz_target.pb.h: fuzz_target.proto $(PROTOC
 $(OUTPUT)afl_driver.o: afl_driver.cpp
 	$(CXX) $(CXXFLAGS) -c $^ -o $@
 
-$(OUTPUT)libprotobuf-mutator/CMakeLists.txt: libprotobuf-mutator.commit
-	mkdir -p $(OUTPUT)libprotobuf-mutator && \
-		cd $(OUTPUT)libprotobuf-mutator && \
-		git init && \
-		git fetch https://github.com/google/libprotobuf-mutator.git && \
-		git checkout $(shell cat libprotobuf-mutator.commit)
-
-$(OUTPUT)libprotobuf-mutator/build/Makefile: $(OUTPUT)libprotobuf-mutator/CMakeLists.txt
+$(OUTPUT)libprotobuf-mutator/build/Makefile: libprotobuf-mutator/CMakeLists.txt
 	mkdir -p $(OUTPUT)libprotobuf-mutator/build && \
-		cd $(OUTPUT)libprotobuf-mutator/build && \
 		cmake \
-			.. \
+			-S libprotobuf-mutator \
+			-B $(OUTPUT)libprotobuf-mutator/build \
 			-DCMAKE_C_COMPILER=clang \
 			-DCMAKE_CXX_COMPILER=clang++ \
 			-DCMAKE_BUILD_TYPE=Debug \
