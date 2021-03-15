@@ -43,49 +43,138 @@ static void HexDump(FILE *stream, const void *Data, size_t Size) {
     fprintf(stream, "\\x%02x", ((const uint8_t *)Data)[i]);
 }
 
+static void HexDumpStr(FILE *stream, const void *Data, size_t Size) {
+  const size_t ChunkSize = 16;
+  for (size_t i = 0; i < Size; i += ChunkSize) {
+    if (i == 0)
+      fprintf(stream, "\"");
+    else
+      fprintf(stream, " \"");
+    HexDump(stream, ((const uint8_t *)Data) + i,
+            (Size - i) < ChunkSize ? (Size - i) : ChunkSize);
+    fprintf(stream, "\"");
+  }
+}
+
+static const char *StrategyStr(int Strategy) {
+  switch (Strategy) {
+  case Z_FILTERED:
+    return "Z_FILTERED";
+  case Z_HUFFMAN_ONLY:
+    return "Z_HUFFMAN_ONLY";
+  case Z_RLE:
+    return "Z_RLE";
+  case Z_FIXED:
+    return "Z_FIXED";
+  case Z_DEFAULT_STRATEGY:
+    return "Z_DEFAULT_STRATEGY";
+  default:
+    return "<unknown>";
+  }
+}
+
+static const char *FlushStr(int Flush) {
+  switch (Flush) {
+  case Z_NO_FLUSH:
+    return "Z_NO_FLUSH";
+  case Z_PARTIAL_FLUSH:
+    return "Z_PARTIAL_FLUSH";
+  case Z_SYNC_FLUSH:
+    return "Z_SYNC_FLUSH";
+  case Z_FULL_FLUSH:
+    return "Z_FULL_FLUSH";
+  case Z_FINISH:
+    return "Z_FINISH";
+  case Z_BLOCK:
+    return "Z_BLOCK";
+  case Z_TREES:
+    return "Z_TREES";
+  default:
+    return "<unknown>";
+  }
+}
+
+static const char *ErrStr(int Err) {
+  switch (Err) {
+  case Z_OK:
+    return "Z_OK";
+    break;
+  case Z_STREAM_END:
+    return "Z_STREAM_END";
+    break;
+  case Z_NEED_DICT:
+    return "Z_NEED_DICT";
+    break;
+  case Z_ERRNO:
+    return "Z_ERRNO";
+    break;
+  case Z_STREAM_ERROR:
+    return "Z_STREAM_ERROR";
+    break;
+  case Z_DATA_ERROR:
+    return "Z_DATA_ERROR";
+    break;
+  case Z_MEM_ERROR:
+    return "Z_MEM_ERROR";
+    break;
+  case Z_BUF_ERROR:
+    return "Z_BUF_ERROR";
+    break;
+  case Z_VERSION_ERROR:
+    return "Z_VERSION_ERROR";
+    break;
+  default:
+    return "<unknown>";
+  }
+}
+
 static int DeflateSetDictionary(z_stream *Strm, const Bytef *Dict,
                                 size_t DictLen) {
   if (Debug) {
-    fprintf(stderr, "deflateSetDictionary(&Strm, \"");
-    HexDump(stderr, Dict, DictLen);
-    fprintf(stderr, "\", %zu) = ", DictLen);
+    fprintf(stderr, "assert(deflateSetDictionary(&Strm, ");
+    HexDumpStr(stderr, Dict, DictLen);
+    fprintf(stderr, ", %zu) == ", DictLen);
   }
   int Err = deflateSetDictionary(Strm, Dict, DictLen);
   if (Debug)
-    fprintf(stderr, "%i;\n", Err);
+    fprintf(stderr, "%s);\n", ErrStr(Err));
   return Err;
 }
 
 static int Deflate(z_stream *Strm, int Flush) {
   if (Debug)
-    fprintf(stderr, "avail_in = %u; avail_out = %u; deflate(&Strm, %i) = ",
-            Strm->avail_in, Strm->avail_out, Flush);
+    fprintf(stderr,
+            "Strm.avail_in = %u; Strm.avail_out = %u; assert(deflate(&Strm, "
+            "%s) == ",
+            Strm->avail_in, Strm->avail_out, FlushStr(Flush));
   int Err = deflate(Strm, Flush);
   if (Debug)
-    fprintf(stderr, "%i;\n", Err);
+    fprintf(stderr, "%s);\n", ErrStr(Err));
   return Err;
 }
 
 static int InflateSetDictionary(z_stream *Strm, const Bytef *Dict,
                                 size_t DictLen) {
   if (Debug) {
-    fprintf(stderr, "inflateSetDictionary(&Strm, \"");
-    HexDump(stderr, Dict, DictLen);
-    fprintf(stderr, "\", %zu) = ", DictLen);
+    fprintf(stderr, "assert(inflateSetDictionary(&Strm, ");
+    HexDumpStr(stderr, Dict, DictLen);
+    fprintf(stderr, ", %zu) == ", DictLen);
   }
   int Err = inflateSetDictionary(Strm, Dict, DictLen);
   if (Debug)
-    fprintf(stderr, "%i;\n", Err);
+    fprintf(stderr, "%s);\n", ErrStr(Err));
   return Err;
 }
 
 static int Inflate(z_stream *Strm, int Flush) {
   if (Debug)
-    fprintf(stderr, "avail_in = %u; avail_out = %u; inflate(&Strm, %i) = ",
-            Strm->avail_in, Strm->avail_out, Flush);
+    fprintf(stderr,
+            "Strm.avail_in = %u; Strm.avail_out = %u; assert(inflate(&Strm, "
+            "%s) == ",
+            Strm->avail_in, Strm->avail_out, FlushStr(Flush));
   int Err = inflate(Strm, Flush);
   if (Debug)
-    fprintf(stderr, "%i;\n", Err);
+    fprintf(stderr, "%s);\n", ErrStr(Err));
   return Err;
 }
 
@@ -135,11 +224,13 @@ struct OpRunner {
     Avail Avail(Strm, Op);
     if (Debug)
       fprintf(stderr,
-              "avail_in = %u; avail_out = %u; deflateParams(&Strm, %i, %i) = ",
-              Strm->avail_in, Strm->avail_out, Op.level(), Op.strategy());
+              "Strm.avail_in = %u; Strm.avail_out = %u; "
+              "assert(deflateParams(&Strm, %i, %s) = ",
+              Strm->avail_in, Strm->avail_out, Op.level(),
+              StrategyStr(Op.strategy()));
     int Err = deflateParams(Strm, Op.level(), Op.strategy());
     if (Debug)
-      fprintf(stderr, "%i;\n", Err);
+      fprintf(stderr, "%s);\n", ErrStr(Err));
     if (Check)
       assert(Err == Z_OK || Err == Z_BUF_ERROR);
     return Err;
@@ -403,12 +494,13 @@ static void FixupPlan(Plan *Plan) {
 static void RunInflate(const Plan &Plan, const uint8_t *Compressed,
                        uInt ActualCompressedSize, bool Check) {
   if (Debug)
-    fprintf(stderr, "n_inflate_ops = %i;\n", Plan.inflate_ops_size());
+    fprintf(stderr, "/* n_inflate_ops = %i; */\n", Plan.inflate_ops_size());
   z_stream Strm;
   memset(&Strm, 0, sizeof(Strm));
   int Err = inflateInit2(&Strm, Plan.window_bits());
   if (Debug)
-    fprintf(stderr, "inflateInit2(&Strm, %i) = %i;\n", Plan.window_bits(), Err);
+    fprintf(stderr, "assert(inflateInit2(&Strm, %i) == %s);\n",
+            Plan.window_bits(), ErrStr(Err));
   assert(Err == Z_OK);
   if (Plan.dict().size() > 0 && Plan.window_bits() == WB_RAW) {
     Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
@@ -459,8 +551,12 @@ static void RunPlan(Plan &Plan) {
   size_t CompressedSize =
       Plan.data().size() * 2 + (Plan.deflate_ops_size() + 1) * 128;
   NormalizeOps(Plan.mutable_deflate_ops(), Plan.data().size(), CompressedSize);
-  if (Debug)
-    fprintf(stderr, "n_deflate_ops = %i;\n", Plan.deflate_ops_size());
+  if (Debug) {
+    fprintf(stderr, "z_stream Strm;\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "/* n_deflate_ops == %i; */\n", Plan.deflate_ops_size());
+    fprintf(stderr, "memset(&Strm, 0, sizeof(Strm));\n");
+  }
 
   std::unique_ptr<uint8_t[]> Compressed(new uint8_t[CompressedSize]);
   z_stream Strm;
@@ -468,9 +564,10 @@ static void RunPlan(Plan &Plan) {
   int Err = deflateInit2(&Strm, Plan.level(), Z_DEFLATED, Plan.window_bits(),
                          Plan.mem_level(), Plan.strategy());
   if (Debug)
-    fprintf(stderr, "deflateInit2(&Strm, %i, Z_DEFLATED, %i, %i, %i) = %i;\n",
-            Plan.level(), Plan.window_bits(), Plan.mem_level(), Plan.strategy(),
-            Err);
+    fprintf(stderr,
+            "assert(deflateInit2(&Strm, %i, Z_DEFLATED, %i, %i, %s) == %s);\n",
+            Plan.level(), Plan.window_bits(), Plan.mem_level(),
+            StrategyStr(Plan.strategy()), ErrStr(Err));
   assert(Err == Z_OK);
   if (Plan.dict().size() > 0) {
     Err = DeflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
@@ -482,9 +579,11 @@ static void RunPlan(Plan &Plan) {
   Strm.next_out = Compressed.get();
   Strm.avail_out = CompressedSize;
   if (Debug) {
-    fprintf(stderr, "char next_in[%zu] = \"", Plan.data().size());
-    HexDump(stderr, Plan.data().c_str(), Plan.data().size());
-    fprintf(stderr, "\";\nchar next_out[%zu];\n", CompressedSize);
+    fprintf(stderr, "z_const Bytef next_in[%zu] = ", Plan.data().size());
+    HexDumpStr(stderr, Plan.data().c_str(), Plan.data().size());
+    fprintf(stderr, ";\nStrm.next_in = next_in;\n");
+    fprintf(stderr, "Bytef next_out[%zu];\n", CompressedSize);
+    fprintf(stderr, "Strm.next_out = next_out;\n");
   }
   for (int i = 0; i < Plan.deflate_ops_size(); i++)
     VisitOp(Plan.deflate_ops(i), OpRunner(&Strm, true));
