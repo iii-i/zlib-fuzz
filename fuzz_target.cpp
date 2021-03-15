@@ -493,8 +493,11 @@ static void FixupPlan(Plan *Plan) {
 
 static void RunInflate(const Plan &Plan, const uint8_t *Compressed,
                        uInt ActualCompressedSize, bool Check) {
-  if (Debug)
-    fprintf(stderr, "/* n_inflate_ops = %i; */\n", Plan.inflate_ops_size());
+  if (Debug) {
+    fprintf(stderr, "/* n_inflate_ops == %i; */\n", Plan.inflate_ops_size());
+    fprintf(stderr, "Strm.next_in = Compressed;\n");
+    fprintf(stderr, "Strm.next_out = Plain;\n");
+  }
   z_stream Strm;
   memset(&Strm, 0, sizeof(Strm));
   int Err = inflateInit2(&Strm, Plan.window_bits());
@@ -544,6 +547,8 @@ static void RunInflate(const Plan &Plan, const uint8_t *Compressed,
                   Plan.data().size()) == 0);
   }
   Err = inflateEnd(&Strm);
+  if (Debug)
+    fprintf(stderr, "assert(inflateEnd(&Strm) == %s);\n", ErrStr(Err));
   assert(Err == Z_OK);
 }
 
@@ -553,7 +558,6 @@ static void RunPlan(Plan &Plan) {
   NormalizeOps(Plan.mutable_deflate_ops(), Plan.data().size(), CompressedSize);
   if (Debug) {
     fprintf(stderr, "z_stream Strm;\n");
-    fprintf(stderr, "\n");
     fprintf(stderr, "/* n_deflate_ops == %i; */\n", Plan.deflate_ops_size());
     fprintf(stderr, "memset(&Strm, 0, sizeof(Strm));\n");
   }
@@ -579,11 +583,11 @@ static void RunPlan(Plan &Plan) {
   Strm.next_out = Compressed.get();
   Strm.avail_out = CompressedSize;
   if (Debug) {
-    fprintf(stderr, "z_const Bytef next_in[%zu] = ", Plan.data().size());
+    fprintf(stderr, "unsigned char Plain[%zu] = ", Plan.data().size());
     HexDumpStr(stderr, Plan.data().c_str(), Plan.data().size());
-    fprintf(stderr, ";\nStrm.next_in = next_in;\n");
-    fprintf(stderr, "Bytef next_out[%zu];\n", CompressedSize);
-    fprintf(stderr, "Strm.next_out = next_out;\n");
+    fprintf(stderr, ";\nStrm.next_in = Plain;\n");
+    fprintf(stderr, "unsigned char Compressed[%zu];\n", CompressedSize);
+    fprintf(stderr, "Strm.next_out = Compressed;\n");
   }
   for (int i = 0; i < Plan.deflate_ops_size(); i++)
     VisitOp(Plan.deflate_ops(i), OpRunner(&Strm, true));
@@ -613,8 +617,10 @@ static void RunPlan(Plan &Plan) {
   uInt ActualCompressedSize = CompressedSize - Strm.avail_out;
   assert(ActualCompressedSize == Strm.total_out);
   if (Debug)
-    fprintf(stderr, "total_out = %i;\n", ActualCompressedSize);
+    fprintf(stderr, "/* total_out == %i; */\n", ActualCompressedSize);
   Err = deflateEnd(&Strm);
+  if (Debug)
+    fprintf(stderr, "assert(deflateEnd(&Strm) == %s);\n", ErrStr(Err));
   assert(Err == Z_OK);
 
   NormalizeOps(Plan.mutable_inflate_ops(), ActualCompressedSize,
@@ -623,10 +629,14 @@ static void RunPlan(Plan &Plan) {
   RunInflate(Plan, Compressed.get(), ActualCompressedSize, true);
 
   if (Debug)
-    fprintf(stderr, "n_bit_flips = %i;\n", Plan.bit_flips_size());
+    fprintf(stderr, "/* n_bit_flips == %i; */\n", Plan.bit_flips_size());
   for (int i = 0; i < Plan.bit_flips_size(); i++) {
-    int index = Plan.bit_flips(i) % (ActualCompressedSize * 8);
-    Compressed[index / 8] ^= (1 << (index % 8));
+    int bit_index = Plan.bit_flips(i) % (ActualCompressedSize * 8);
+    int byte_index = bit_index / 8;
+    int mask = 1 << (bit_index % 8);
+    Compressed[byte_index] ^= mask;
+    if (Debug)
+      fprintf(stderr, "Compressed[%d] ^= 0x%02x;\n", byte_index, mask);
   }
   RunInflate(Plan, Compressed.get(), ActualCompressedSize, false);
 }
