@@ -216,44 +216,27 @@ void AvailEnd(struct Avail *Self) {
   Self->Strm->avail_out = Self->AvailOut0 - ConsumedOut;
 }
 
-static int RunDeflate(z_stream *Strm, const class Deflate *Op, bool Check) {
-  Avail Avail;
-  AvailInit(&Avail, Strm, Op->avail_in(), Op->avail_out());
-  int Err = Deflate(Strm, Op->flush());
-  AvailEnd(&Avail);
-  if (Check)
-    assert(Err == Z_OK || Err == Z_BUF_ERROR);
-  return Err;
-}
-
-static int RunDeflateParams(z_stream *Strm, const class DeflateParams *Op,
-                            bool Check) {
-  Avail Avail;
-  AvailInit(&Avail, Strm, Op->avail_in(), Op->avail_out());
-  int Err = DeflateParams(Strm, Op->level(), Op->strategy());
-  AvailEnd(&Avail);
-  if (Check)
-    assert(Err == Z_OK || Err == Z_BUF_ERROR);
-  return Err;
-}
-
-static int RunInflate(z_stream *Strm, const class Inflate *Op, bool Check) {
-  Avail Avail;
-  AvailInit(&Avail, Strm, Op->avail_in(), Op->avail_out());
-  int Err = Inflate(Strm, Op->flush());
-  AvailEnd(&Avail);
-  if (Check)
-    assert(Err == Z_OK || Err == Z_STREAM_END || Err == Z_NEED_DICT ||
-           Err == Z_BUF_ERROR);
-  return Err;
-}
-
 static int RunDeflateOp(z_stream *Strm, const DeflateOp *Op, bool Check) {
-  if (Op->has_deflate())
-    return RunDeflate(Strm, &Op->deflate(), Check);
-  else if (Op->has_deflate_params())
-    return RunDeflateParams(Strm, &Op->deflate_params(), Check);
-  else if (Op->op_case() == 0)
+  if (Op->has_deflate()) {
+    Avail Avail;
+    AvailInit(&Avail, Strm, Op->deflate().avail_in(),
+              Op->deflate().avail_out());
+    int Err = Deflate(Strm, Op->deflate().flush());
+    AvailEnd(&Avail);
+    if (Check)
+      assert(Err == Z_OK || Err == Z_BUF_ERROR);
+    return Err;
+  } else if (Op->has_deflate_params()) {
+    Avail Avail;
+    AvailInit(&Avail, Strm, Op->deflate_params().avail_in(),
+              Op->deflate_params().avail_out());
+    int Err = DeflateParams(Strm, Op->deflate_params().level(),
+                            Op->deflate_params().strategy());
+    AvailEnd(&Avail);
+    if (Check)
+      assert(Err == Z_OK || Err == Z_BUF_ERROR);
+    return Err;
+  } else if (Op->op_case() == 0)
     return 0;
   else {
     fprintf(stderr, "Unexpected DeflateOp->op_case() = %i\n", Op->op_case());
@@ -262,9 +245,17 @@ static int RunDeflateOp(z_stream *Strm, const DeflateOp *Op, bool Check) {
 }
 
 static int RunInflateOp(z_stream *Strm, const InflateOp *Op, bool Check) {
-  if (Op->has_inflate())
-    return RunInflate(Strm, &Op->inflate(), Check);
-  else if (Op->op_case() == 0)
+  if (Op->has_inflate()) {
+    Avail Avail;
+    AvailInit(&Avail, Strm, Op->inflate().avail_in(),
+              Op->inflate().avail_out());
+    int Err = Inflate(Strm, Op->inflate().flush());
+    AvailEnd(&Avail);
+    if (Check)
+      assert(Err == Z_OK || Err == Z_STREAM_END || Err == Z_NEED_DICT ||
+             Err == Z_BUF_ERROR);
+    return Err;
+  } else if (Op->op_case() == 0)
     return 0;
   else {
     fprintf(stderr, "Unexpected InflateOp->op_case() = %i\n", Op->op_case());
