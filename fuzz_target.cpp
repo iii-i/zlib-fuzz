@@ -440,16 +440,16 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
 }
 #endif
 
-static void RunPlanInflate(const Plan &Plan, const uint8_t *Compressed,
+static void RunPlanInflate(const Plan *Plan, const uint8_t *Compressed,
                            uInt ActualCompressedSize, bool Check) {
   if (Debug) {
-    fprintf(stderr, "/* n_inflate_ops == %i; */\n", Plan.inflate_ops_size());
+    fprintf(stderr, "/* n_inflate_ops == %i; */\n", Plan->inflate_ops_size());
     fprintf(stderr, "Strm.next_in = Compressed;\n");
     fprintf(stderr, "Strm.next_out = Plain;\n");
   }
   z_stream Strm;
   memset(&Strm, 0, sizeof(Strm));
-  int WindowBits = Plan.window_bits();
+  int WindowBits = Plan->window_bits();
   if (WindowBits == WB_DEFAULT)
     WindowBits = WB_ZLIB;
   int Err = inflateInit2(&Strm, WindowBits);
@@ -457,25 +457,25 @@ static void RunPlanInflate(const Plan &Plan, const uint8_t *Compressed,
     fprintf(stderr, "assert(inflateInit2(&Strm, %i) == %s);\n", WindowBits,
             ErrStr(Err));
   assert(Err == Z_OK);
-  if (Plan.dict().size() > 0 && WindowBits == WB_RAW) {
-    Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
-                               Plan.dict().size());
+  if (Plan->dict().size() > 0 && WindowBits == WB_RAW) {
+    Err = InflateSetDictionary(&Strm, (const Bytef *)Plan->dict().c_str(),
+                               Plan->dict().size());
     assert(Err == Z_OK);
   }
-  size_t TailSize = Plan.tail_size() & 0xff;
+  size_t TailSize = Plan->tail_size() & 0xff;
   std::unique_ptr<uint8_t[]> Uncompressed(
-      new uint8_t[Plan.data().size() + TailSize]);
+      new uint8_t[Plan->data().size() + TailSize]);
   Strm.next_in = Compressed;
   Strm.avail_in = ActualCompressedSize;
   Strm.next_out = Uncompressed.get();
-  Strm.avail_out = Plan.data().size() + TailSize;
-  for (int i = 0; i < Plan.inflate_ops_size(); i++) {
-    Err = RunInflateOp(&Strm, &Plan.inflate_ops(i), Check);
+  Strm.avail_out = Plan->data().size() + TailSize;
+  for (int i = 0; i < Plan->inflate_ops_size(); i++) {
+    Err = RunInflateOp(&Strm, &Plan->inflate_ops(i), Check);
     if (Err == Z_NEED_DICT) {
       if (Check)
-        assert(Plan.dict().size() > 0 && WindowBits == WB_ZLIB);
-      Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
-                                 Plan.dict().size());
+        assert(Plan->dict().size() > 0 && WindowBits == WB_ZLIB);
+      Err = InflateSetDictionary(&Strm, (const Bytef *)Plan->dict().c_str(),
+                                 Plan->dict().size());
       if (Check)
         assert(Err == Z_OK);
     }
@@ -484,9 +484,9 @@ static void RunPlanInflate(const Plan &Plan, const uint8_t *Compressed,
     Err = Inflate(&Strm, Z_NO_FLUSH);
     if (Err == Z_NEED_DICT) {
       if (Check)
-        assert(Plan.dict().size() > 0 && WindowBits == WB_ZLIB);
-      Err = InflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
-                                 Plan.dict().size());
+        assert(Plan->dict().size() > 0 && WindowBits == WB_ZLIB);
+      Err = InflateSetDictionary(&Strm, (const Bytef *)Plan->dict().c_str(),
+                                 Plan->dict().size());
       if (Check)
         assert(Err == Z_OK);
       Err = Inflate(&Strm, Z_NO_FLUSH);
@@ -496,8 +496,8 @@ static void RunPlanInflate(const Plan &Plan, const uint8_t *Compressed,
     assert(Err == Z_STREAM_END);
     assert(Strm.avail_in == 0);
     assert(Strm.avail_out == TailSize);
-    assert(memcmp(Uncompressed.get(), Plan.data().c_str(),
-                  Plan.data().size()) == 0);
+    assert(memcmp(Uncompressed.get(), Plan->data().c_str(),
+                  Plan->data().size()) == 0);
   }
   Err = inflateEnd(&Strm);
   if (Debug)
@@ -505,54 +505,54 @@ static void RunPlanInflate(const Plan &Plan, const uint8_t *Compressed,
   assert(Err == Z_OK);
 }
 
-static void RunPlan(Plan &Plan) {
+static void RunPlan(const Plan *Plan) {
   size_t CompressedSize =
-      Plan.data().size() * 2 + (Plan.deflate_ops_size() + 1) * 128;
+      Plan->data().size() * 2 + (Plan->deflate_ops_size() + 1) * 128;
   if (Debug) {
     fprintf(stderr, "z_stream Strm;\n");
-    fprintf(stderr, "/* n_deflate_ops == %i; */\n", Plan.deflate_ops_size());
+    fprintf(stderr, "/* n_deflate_ops == %i; */\n", Plan->deflate_ops_size());
     fprintf(stderr, "memset(&Strm, 0, sizeof(Strm));\n");
   }
 
   std::unique_ptr<uint8_t[]> Compressed(new uint8_t[CompressedSize]);
   z_stream Strm;
   memset(&Strm, 0, sizeof(Strm));
-  int WindowBits = Plan.window_bits();
+  int WindowBits = Plan->window_bits();
   if (WindowBits == WB_DEFAULT)
     WindowBits = WB_ZLIB;
-  int MemLevel = Plan.mem_level();
+  int MemLevel = Plan->mem_level();
   if (MemLevel == MEM_LEVEL_DEFAULT)
     MemLevel = MEM_LEVEL8;
-  int Err = deflateInit2(&Strm, Plan.level(), Z_DEFLATED, WindowBits, MemLevel,
-                         Plan.strategy());
+  int Err = deflateInit2(&Strm, Plan->level(), Z_DEFLATED, WindowBits, MemLevel,
+                         Plan->strategy());
   if (Debug)
     fprintf(stderr,
             "assert(deflateInit2(&Strm, %i, Z_DEFLATED, %i, %i, %s) == %s);\n",
-            Plan.level(), WindowBits, MemLevel, StrategyStr(Plan.strategy()),
+            Plan->level(), WindowBits, MemLevel, StrategyStr(Plan->strategy()),
             ErrStr(Err));
   assert(Err == Z_OK);
-  if (Plan.dict().size() > 0 && WindowBits != WB_GZIP) {
-    Err = DeflateSetDictionary(&Strm, (const Bytef *)Plan.dict().c_str(),
-                               Plan.dict().size());
+  if (Plan->dict().size() > 0 && WindowBits != WB_GZIP) {
+    Err = DeflateSetDictionary(&Strm, (const Bytef *)Plan->dict().c_str(),
+                               Plan->dict().size());
     assert(Err == Z_OK);
   }
-  Strm.next_in = (const Bytef *)Plan.data().c_str();
-  Strm.avail_in = Plan.data().size();
+  Strm.next_in = (const Bytef *)Plan->data().c_str();
+  Strm.avail_in = Plan->data().size();
   Strm.next_out = Compressed.get();
   Strm.avail_out = CompressedSize;
   if (Debug) {
-    fprintf(stderr, "unsigned char Plain[%zu] = ", Plan.data().size());
-    HexDumpStr(stderr, Plan.data().c_str(), Plan.data().size());
+    fprintf(stderr, "unsigned char Plain[%zu] = ", Plan->data().size());
+    HexDumpStr(stderr, Plan->data().c_str(), Plan->data().size());
     fprintf(stderr, ";\nStrm.next_in = Plain;\n");
     fprintf(stderr, "unsigned char Compressed[%zu];\n", CompressedSize);
     fprintf(stderr, "Strm.next_out = Compressed;\n");
   }
-  for (int i = 0; i < Plan.deflate_ops_size(); i++)
-    RunDeflateOp(&Strm, &Plan.deflate_ops(i), true);
-  int FinishCount = Plan.finish_avail_outs_size();
+  for (int i = 0; i < Plan->deflate_ops_size(); i++)
+    RunDeflateOp(&Strm, &Plan->deflate_ops(i), true);
+  int FinishCount = Plan->finish_avail_outs_size();
   uInt FinishAvailOutDenominator = 0;
   for (int i = 0; i < FinishCount; i++)
-    FinishAvailOutDenominator += Plan.finish_avail_outs(i);
+    FinishAvailOutDenominator += Plan->finish_avail_outs(i);
   if (FinishAvailOutDenominator == 0) {
     Err = Z_OK;
   } else {
@@ -560,7 +560,7 @@ static void RunPlan(Plan &Plan) {
     for (int i = 0; i < FinishCount; i++) {
       Avail Avail;
       AvailInit(&Avail, &Strm, Strm.avail_in,
-                (Plan.finish_avail_outs(i) * FinishAvailOutNumerator) /
+                (Plan->finish_avail_outs(i) * FinishAvailOutNumerator) /
                     FinishAvailOutDenominator);
       Err = Deflate(&Strm, Z_FINISH);
       AvailEnd(&Avail);
@@ -586,9 +586,9 @@ static void RunPlan(Plan &Plan) {
   RunPlanInflate(Plan, Compressed.get(), ActualCompressedSize, true);
 
   if (Debug)
-    fprintf(stderr, "/* n_bit_flips == %i; */\n", Plan.bit_flips_size());
-  for (int i = 0; i < Plan.bit_flips_size(); i++) {
-    int bit_index = Plan.bit_flips(i) % (ActualCompressedSize * 8);
+    fprintf(stderr, "/* n_bit_flips == %i; */\n", Plan->bit_flips_size());
+  for (int i = 0; i < Plan->bit_flips_size(); i++) {
+    int bit_index = Plan->bit_flips(i) % (ActualCompressedSize * 8);
     int byte_index = bit_index / 8;
     int mask = 1 << (bit_index % 8);
     Compressed[byte_index] ^= mask;
@@ -599,15 +599,12 @@ static void RunPlan(Plan &Plan) {
 }
 
 #ifdef USE_LIBPROTOBUF_MUTATOR
-DEFINE_PROTO_FUZZER(const Plan &Plan) {
-  class Plan PlanCopy = Plan;
-  RunPlan(PlanCopy);
-}
+DEFINE_PROTO_FUZZER(const Plan &Plan) { RunPlan(&Plan); }
 #else
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   Plan Plan;
   if (GeneratePlan(Plan, Data, Size))
-    RunPlan(Plan);
+    RunPlan(&Plan);
   return 0;
 }
 #endif
