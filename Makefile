@@ -23,6 +23,8 @@ PROTOBUF_PATH=$(OUTPUT)libprotobuf-mutator/build/external.protobuf
 PROTOC=$(PROTOBUF_PATH)/bin/protoc
 override CXXFLAGS:=-std=c++17 -fPIC -Wall -Wextra -Werror -O2 -g -isystem libprotobuf-mutator -isystem $(PROTOBUF_PATH)/include $(CXXFLAGS)
 override LDFLAGS:=-L$(OUTPUT)libprotobuf-mutator/build/src -L$(OUTPUT)libprotobuf-mutator/build/src/libfuzzer -L$(PROTOBUF_PATH)/lib $(LDFLAGS)
+ZLIB?=$(OUTPUT)zlib-ng/build-libfuzzer
+ZLIB_AFL?=$(OUTPUT)zlib-ng/build-afl
 LIBZ_A:=$(ZLIB)/libz.a
 LIBZ_A_AFL:=$(ZLIB_AFL)/libz.a
 
