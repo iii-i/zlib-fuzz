@@ -216,92 +216,58 @@ void AvailEnd(struct Avail *Self) {
   Self->Strm->avail_out = Self->AvailOut0 - ConsumedOut;
 }
 
-struct OpRunner {
-  z_stream *const Strm;
-  const bool Check;
+static int RunDeflate(z_stream *Strm, const class Deflate *Op, bool Check) {
+  Avail Avail;
+  AvailInit(&Avail, Strm, Op->avail_in(), Op->avail_out());
+  int Err = Deflate(Strm, Op->flush());
+  AvailEnd(&Avail);
+  if (Check)
+    assert(Err == Z_OK || Err == Z_BUF_ERROR);
+  return Err;
+}
 
-  OpRunner(z_stream *Strm, bool Check) : Strm(Strm), Check(Check) {}
+static int RunDeflateParams(z_stream *Strm, const class DeflateParams *Op,
+                            bool Check) {
+  Avail Avail;
+  AvailInit(&Avail, Strm, Op->avail_in(), Op->avail_out());
+  int Err = DeflateParams(Strm, Op->level(), Op->strategy());
+  AvailEnd(&Avail);
+  if (Check)
+    assert(Err == Z_OK || Err == Z_BUF_ERROR);
+  return Err;
+}
 
-  int operator()(const class Deflate &Op) const {
-    Avail Avail;
-    AvailInit(&Avail, Strm, Op.avail_in(), Op.avail_out());
-    int Err = Deflate(Strm, Op.flush());
-    AvailEnd(&Avail);
-    if (Check)
-      assert(Err == Z_OK || Err == Z_BUF_ERROR);
-    return Err;
-  }
+static int RunInflate(z_stream *Strm, const class Inflate *Op, bool Check) {
+  Avail Avail;
+  AvailInit(&Avail, Strm, Op->avail_in(), Op->avail_out());
+  int Err = Inflate(Strm, Op->flush());
+  AvailEnd(&Avail);
+  if (Check)
+    assert(Err == Z_OK || Err == Z_STREAM_END || Err == Z_NEED_DICT ||
+           Err == Z_BUF_ERROR);
+  return Err;
+}
 
-  int operator()(const class DeflateParams &Op) const {
-    Avail Avail;
-    AvailInit(&Avail, Strm, Op.avail_in(), Op.avail_out());
-    int Err = DeflateParams(Strm, Op.level(), Op.strategy());
-    AvailEnd(&Avail);
-    if (Check)
-      assert(Err == Z_OK || Err == Z_BUF_ERROR);
-    return Err;
-  }
-
-  int operator()(const class Inflate &Op) const {
-    Avail Avail;
-    AvailInit(&Avail, Strm, Op.avail_in(), Op.avail_out());
-    int Err = Inflate(Strm, Op.flush());
-    AvailEnd(&Avail);
-    if (Check)
-      assert(Err == Z_OK || Err == Z_STREAM_END || Err == Z_NEED_DICT ||
-             Err == Z_BUF_ERROR);
-    return Err;
-  }
-};
-
-template <typename V>
-static int VisitOp(const DeflateOp &Op, const V &Visitor) {
-  if (Op.has_deflate())
-    return Visitor(Op.deflate());
-  else if (Op.has_deflate_params())
-    return Visitor(Op.deflate_params());
-  else if (Op.op_case() == 0)
+static int RunDeflateOp(z_stream *Strm, const DeflateOp *Op, bool Check) {
+  if (Op->has_deflate())
+    return RunDeflate(Strm, &Op->deflate(), Check);
+  else if (Op->has_deflate_params())
+    return RunDeflateParams(Strm, &Op->deflate_params(), Check);
+  else if (Op->op_case() == 0)
     return 0;
   else {
-    fprintf(stderr, "Unexpected DeflateOp.op_case() = %i\n", Op.op_case());
+    fprintf(stderr, "Unexpected DeflateOp->op_case() = %i\n", Op->op_case());
     assert(0);
   }
 }
 
-template <typename V>
-static int VisitMutableOp(DeflateOp &Op, const V &Visitor) {
-  if (Op.has_deflate())
-    return Visitor(Op.mutable_deflate());
-  else if (Op.has_deflate_params())
-    return Visitor(Op.mutable_deflate_params());
-  else if (Op.op_case() == 0)
+static int RunInflateOp(z_stream *Strm, const InflateOp *Op, bool Check) {
+  if (Op->has_inflate())
+    return RunInflate(Strm, &Op->inflate(), Check);
+  else if (Op->op_case() == 0)
     return 0;
   else {
-    fprintf(stderr, "Unexpected DeflateOp.op_case() = %i\n", Op.op_case());
-    assert(0);
-  }
-}
-
-template <typename V>
-static int VisitOp(const InflateOp &Op, const V &Visitor) {
-  if (Op.has_inflate())
-    return Visitor(Op.inflate());
-  else if (Op.op_case() == 0)
-    return 0;
-  else {
-    fprintf(stderr, "Unexpected InflateOp.op_case() = %i\n", Op.op_case());
-    assert(0);
-  }
-}
-
-template <typename V>
-static int VisitMutableOp(InflateOp &Op, const V &Visitor) {
-  if (Op.has_inflate())
-    return Visitor(Op.mutable_inflate());
-  else if (Op.op_case() == 0)
-    return 0;
-  else {
-    fprintf(stderr, "Unexpected InflateOp.op_case() = %i\n", Op.op_case());
+    fprintf(stderr, "Unexpected InflateOp->op_case() = %i\n", Op->op_case());
     assert(0);
   }
 }
@@ -474,8 +440,8 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
 }
 #endif
 
-static void RunInflate(const Plan &Plan, const uint8_t *Compressed,
-                       uInt ActualCompressedSize, bool Check) {
+static void RunPlanInflate(const Plan &Plan, const uint8_t *Compressed,
+                           uInt ActualCompressedSize, bool Check) {
   if (Debug) {
     fprintf(stderr, "/* n_inflate_ops == %i; */\n", Plan.inflate_ops_size());
     fprintf(stderr, "Strm.next_in = Compressed;\n");
@@ -504,7 +470,7 @@ static void RunInflate(const Plan &Plan, const uint8_t *Compressed,
   Strm.next_out = Uncompressed.get();
   Strm.avail_out = Plan.data().size() + TailSize;
   for (int i = 0; i < Plan.inflate_ops_size(); i++) {
-    Err = VisitOp(Plan.inflate_ops(i), OpRunner(&Strm, Check));
+    Err = RunInflateOp(&Strm, &Plan.inflate_ops(i), Check);
     if (Err == Z_NEED_DICT) {
       if (Check)
         assert(Plan.dict().size() > 0 && WindowBits == WB_ZLIB);
@@ -582,7 +548,7 @@ static void RunPlan(Plan &Plan) {
     fprintf(stderr, "Strm.next_out = Compressed;\n");
   }
   for (int i = 0; i < Plan.deflate_ops_size(); i++)
-    VisitOp(Plan.deflate_ops(i), OpRunner(&Strm, true));
+    RunDeflateOp(&Strm, &Plan.deflate_ops(i), true);
   int FinishCount = Plan.finish_avail_outs_size();
   uInt FinishAvailOutDenominator = 0;
   for (int i = 0; i < FinishCount; i++)
@@ -617,7 +583,7 @@ static void RunPlan(Plan &Plan) {
     fprintf(stderr, "assert(deflateEnd(&Strm) == %s);\n", ErrStr(Err));
   assert(Err == Z_OK);
 
-  RunInflate(Plan, Compressed.get(), ActualCompressedSize, true);
+  RunPlanInflate(Plan, Compressed.get(), ActualCompressedSize, true);
 
   if (Debug)
     fprintf(stderr, "/* n_bit_flips == %i; */\n", Plan.bit_flips_size());
@@ -629,7 +595,7 @@ static void RunPlan(Plan &Plan) {
     if (Debug)
       fprintf(stderr, "Compressed[%d] ^= 0x%02x;\n", byte_index, mask);
   }
-  RunInflate(Plan, Compressed.get(), ActualCompressedSize, false);
+  RunPlanInflate(Plan, Compressed.get(), ActualCompressedSize, false);
 }
 
 #ifdef USE_LIBPROTOBUF_MUTATOR
