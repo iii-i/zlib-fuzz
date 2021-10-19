@@ -36,7 +36,7 @@ override ZLIB_NG_CMFLAGS:=-DCMAKE_BUILD_TYPE=RelWithDebInfo -DZLIB_COMPAT=ON $(Z
 SYMCC=$(ABS_OUTPUT)symcc/build/symcc
 
 .PHONY: all
-all: $(OUTPUT)fuzz $(OUTPUT)fuzz_libprotobuf_mutator $(OUTPUT)fuzz_afl
+all: $(OUTPUT)fuzz $(OUTPUT)fuzz_libprotobuf_mutator $(OUTPUT)fuzz_afl $(OUTPUT)fuzz_symcc
 
 $(OUTPUT)fuzz: $(OUTPUT)fuzz_target.o $(LIBZ_A)
 	$(CXX) $(LDFLAGS) -fsanitize=address,fuzzer $(OUTPUT)fuzz_target.o -o $@ $(LIBZ_A)
@@ -59,20 +59,31 @@ $(LIBZ_A): $(foreach file,$(shell git -C $(ZLIB) ls-files),$(ZLIB)/$(file))
 $(LIBZ_A_AFL): $(foreach file,$(shell git -C $(ZLIB_AFL) ls-files),$(ZLIB_AFL)/$(file))
 	cd $(ZLIB_AFL) && $(MAKE) libz.a
 
+$(LIBZ_A_SYMCC): $(foreach file,$(shell git -C $(ZLIB_SYMCC) ls-files),$(ZLIB_SYMCC)/$(file))
+	cd $(ZLIB_SYMCC) && $(MAKE) libz.a
+
 $(OUTPUT)fuzz_target.o: fuzz_target.cpp $(OUTPUT)fuzz_target.pb.h | fmt
 	$(CC) $(CFLAGS) -x c -fsanitize=address,fuzzer -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
 
 $(OUTPUT)fuzz_target_libprotobuf_mutator.o: fuzz_target.cpp $(OUTPUT)fuzz_target.pb.h | fmt
 	$(CXX) $(CXXFLAGS) -fsanitize=address,fuzzer -DUSE_LIBPROTOBUF_MUTATOR -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
 
-$(OUTPUT)fuzz_target_afl.o: fuzz_target.cpp $(OUTPUT)fuzz_target.pb.h $(AFLCXX) | fmt
+$(OUTPUT)fuzz_target_afl.o: fuzz_target.cpp $(AFLCC) | fmt
 	$(AFLCC) $(CFLAGS) -x c -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
+
+$(OUTPUT)fuzz_target_symcc.o: fuzz_target.cpp $(SYMCC) | fmt
+	$(SYMCC) $(CFLAGS) -x c -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
+
+$(OUTPUT)symcc_driver.o: symcc_driver.c $(SYMCC) | fmt
+	$(SYMCC) $(CFLAGS) -c $^ -o $@
+
+FUZZ_SYMCC_OBJS=$(OUTPUT)fuzz_target_symcc.o $(OUTPUT)symcc_driver.o $(LIBZ_A_SYMCC)
+
+$(OUTPUT)fuzz_symcc: $(FUZZ_SYMCC_OBJS) $(SYMCC)
+	$(SYMCC) $(LDFLAGS) -o $@ $(FUZZ_SYMCC_OBJS)
 
 $(OUTPUT)fuzz_target.pb.o: $(OUTPUT)fuzz_target.pb.cc $(OUTPUT)fuzz_target.pb.h
 	$(CXX) $(CXXFLAGS) -c $(OUTPUT)fuzz_target.pb.cc -o $@
-
-$(OUTPUT)fuzz_target.pb_afl.o: $(OUTPUT)fuzz_target.pb.cc $(OUTPUT)fuzz_target.pb.h $(AFLCXX)
-	$(AFLCXX) $(CXXFLAGS) -c $(OUTPUT)fuzz_target.pb.cc -o $@
 
 $(OUTPUT)fuzz_target.pb.cc $(OUTPUT)fuzz_target.pb.h: fuzz_target.proto $(PROTOC)
 	$(PROTOC) --cpp_out=$(OUTPUT) fuzz_target.proto
@@ -149,6 +160,7 @@ $(OUTPUT)zlib-ng/build-symcc/Makefile: \
 			-B $(OUTPUT)zlib-ng/build-symcc \
 			-DCMAKE_C_COMPILER=$(SYMCC) \
 			-DWITH_SSE2=OFF \
+			-DWITH_CRC32_VX=OFF \
 			$(ZLIB_NG_CMFLAGS)
 
 $(OUTPUT)zlib-ng/build-symcc/libz.a: \
@@ -158,4 +170,4 @@ $(OUTPUT)zlib-ng/build-symcc/libz.a: \
 
 .PHONY: fmt
 fmt:
-	clang-format -i -style=llvm fuzz_target.cpp
+	clang-format -i -style=llvm fuzz_target.cpp symcc_driver.c
