@@ -30,6 +30,8 @@ ZLIB_AFL?=$(OUTPUT)zlib-ng/build-afl
 LIBZ_A:=$(ZLIB)/libz.a
 LIBZ_A_AFL:=$(ZLIB_AFL)/libz.a
 override ZLIB_NG_CMFLAGS:=-DCMAKE_BUILD_TYPE=RelWithDebInfo -DZLIB_COMPAT=ON $(ZLIB_NG_CMFLAGS)
+SYMCC=$(ABS_OUTPUT)symcc/build/symcc
+SYMCC=$(ABS_OUTPUT)symcc/build/sym++
 
 .PHONY: all
 all: $(OUTPUT)fuzz $(OUTPUT)fuzz_libprotobuf_mutator $(OUTPUT)fuzz_afl
@@ -122,6 +124,19 @@ $(OUTPUT)zlib-ng/build-afl/libz.a: \
 		$(OUTPUT)zlib-ng/build-afl/Makefile \
 		$(foreach file,$(shell git -C zlib-ng ls-files),zlib-ng/$(file))
 	cd $(OUTPUT)zlib-ng/build-afl && $(MAKE)
+
+$(OUTPUT)symcc/build/Makefile: symcc/CMakeLists.txt
+	mkdir -p $(OUTPUT)symcc/build && \
+		cmake -S symcc \
+		-B $(OUTPUT)symcc/build \
+		-DQSYM_BACKEND=ON \
+		-DZ3_TRUST_SYSTEM_VERSION=ON \
+		$(SYMCC_CMFLAGS)
+
+$(SYMCC) $(SYMCXX): \
+		$(OUTPUT)symcc/build/Makefile \
+		$(foreach file,$(shell git -C symcc ls-files),symcc/$(file))
+	cd $(OUTPUT)symcc/build && $(MAKE)
 
 .PHONY: fmt
 fmt:

@@ -7,3 +7,6 @@
 [submodule "AFLplusplus"]
 	path = AFLplusplus
 	url = https://github.com/AFLplusplus/AFLplusplus.git
+[submodule "symcc"]
+	path = symcc
+	url = https://github.com/eurecom-s3/symcc.git
