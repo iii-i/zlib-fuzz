@@ -27,6 +27,7 @@ ZLIB?=$(OUTPUT)zlib-ng/build-libfuzzer
 ZLIB_AFL?=$(OUTPUT)zlib-ng/build-afl
 LIBZ_A:=$(ZLIB)/libz.a
 LIBZ_A_AFL:=$(ZLIB_AFL)/libz.a
+override ZLIB_NG_CMFLAGS:=-DCMAKE_BUILD_TYPE=RelWithDebInfo -DZLIB_COMPAT=ON $(ZLIB_NG_CMFLAGS)
 
 .PHONY: all
 all: $(OUTPUT)fuzz $(OUTPUT)fuzz_libprotobuf_mutator $(OUTPUT)fuzz_afl
@@ -93,8 +94,7 @@ $(OUTPUT)zlib-ng/build-libfuzzer/Makefile: zlib-ng/CMakeLists.txt
 			-B $(OUTPUT)zlib-ng/build-libfuzzer \
 			-DCMAKE_C_COMPILER=$(CC) \
 			-DCMAKE_C_FLAGS=-fsanitize=address,fuzzer-no-link \
-			-DCMAKE_BUILD_TYPE=RelWithDebInfo \
-			-DZLIB_COMPAT=ON
+			$(ZLIB_NG_CMFLAGS)
 
 $(OUTPUT)zlib-ng/build-libfuzzer/libz.a: \
 		$(OUTPUT)zlib-ng/build-libfuzzer/Makefile \
@@ -114,8 +114,7 @@ $(OUTPUT)zlib-ng/build-afl/Makefile: \
 			-S zlib-ng \
 			-B $(OUTPUT)zlib-ng/build-afl \
 			-DCMAKE_C_COMPILER=$(AFLCC) \
-			-DCMAKE_BUILD_TYPE=RelWithDebInfo \
-			-DZLIB_COMPAT=ON
+			$(ZLIB_NG_CMFLAGS)
 
 $(OUTPUT)zlib-ng/build-afl/libz.a: \
 		$(OUTPUT)zlib-ng/build-afl/Makefile \
