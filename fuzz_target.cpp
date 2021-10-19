@@ -380,6 +380,8 @@ static uInt GetFinishAvailOut(struct PlanExecution *PE) {
   return PE->Plan->finish_avail_outs(PE->FinishOpIdx);
 }
 
+static void ResetInflateOps(struct PlanExecution *PE) { PE->InflateOpIdx = 0; }
+
 static size_t GetInflateOpCount(struct PlanExecution *PE) {
   return PE->Plan->inflate_ops_size();
 }
@@ -597,6 +599,8 @@ static uInt GetFinishAvailOut(struct PlanExecution *PE) {
   return POP(PE, uint8_t, 0);
 }
 
+static void ResetInflateOps(struct PlanExecution *PE) { (void)PE; }
+
 static size_t GetInflateOpCount(struct PlanExecution *PE) {
   return POP(PE, uint8_t, 0);
 }
@@ -688,6 +692,7 @@ static int RunInflateOp(z_stream *Strm, struct PlanExecution *PE, bool Check) {
 static void ExecutePlanInflate(struct PlanExecution *PE,
                                const uint8_t *Compressed,
                                uInt ActualCompressedSize, bool Check) {
+  ResetInflateOps(PE);
   int InflateOpCount = GetInflateOpCount(PE);
   if (Debug) {
     fprintf(stderr, "/* n_inflate_ops == %i; */\n", InflateOpCount);
