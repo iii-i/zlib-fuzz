@@ -251,6 +251,8 @@ static int VisitOp(const DeflateOp &Op, const V &Visitor) {
     return Visitor(Op.deflate());
   else if (Op.has_deflate_params())
     return Visitor(Op.deflate_params());
+  else if (Op.op_case() == 0)
+    return 0;
   else {
     fprintf(stderr, "Unexpected DeflateOp.op_case() = %i\n", Op.op_case());
     assert(0);
@@ -263,6 +265,8 @@ static int VisitMutableOp(DeflateOp &Op, const V &Visitor) {
     return Visitor(Op.mutable_deflate());
   else if (Op.has_deflate_params())
     return Visitor(Op.mutable_deflate_params());
+  else if (Op.op_case() == 0)
+    return 0;
   else {
     fprintf(stderr, "Unexpected DeflateOp.op_case() = %i\n", Op.op_case());
     assert(0);
@@ -273,6 +277,8 @@ template <typename V>
 static int VisitOp(const InflateOp &Op, const V &Visitor) {
   if (Op.has_inflate())
     return Visitor(Op.inflate());
+  else if (Op.op_case() == 0)
+    return 0;
   else {
     fprintf(stderr, "Unexpected InflateOp.op_case() = %i\n", Op.op_case());
     assert(0);
@@ -283,6 +289,8 @@ template <typename V>
 static int VisitMutableOp(InflateOp &Op, const V &Visitor) {
   if (Op.has_inflate())
     return Visitor(Op.mutable_inflate());
+  else if (Op.op_case() == 0)
+    return 0;
   else {
     fprintf(stderr, "Unexpected InflateOp.op_case() = %i\n", Op.op_case());
     assert(0);
@@ -636,26 +644,12 @@ static void RunPlan(Plan &Plan) {
 }
 
 #ifdef USE_LIBPROTOBUF_MUTATOR
-template <typename OpsT> static void FixupOps(OpsT *Ops) {
-  int Pos = 0;
-  for (int i = 0, size = Ops->size(); i < size; i++) {
-    typename OpsT::value_type &Op = (*Ops)[i];
-    if (Op.op_case() == 0)
-      continue;
-    Ops->SwapElements(Pos, i);
-    Pos++;
-  }
-  Ops->DeleteSubrange(Pos, Ops->size() - Pos);
-}
-
 static protobuf_mutator::libfuzzer::PostProcessorRegistration<Plan> reg = {
     [](Plan *Plan, unsigned int /* Seed */) {
       if (Plan->window_bits() == WB_DEFAULT)
         Plan->set_window_bits(WB_ZLIB);
       if (Plan->mem_level() == MEM_LEVEL_DEFAULT)
         Plan->set_mem_level(MEM_LEVEL8);
-      FixupOps(Plan->mutable_deflate_ops());
-      FixupOps(Plan->mutable_inflate_ops());
       if (Plan->window_bits() == WB_GZIP)
         Plan->clear_dict();
       Plan->set_tail_size(Plan->tail_size() & 0xff);
