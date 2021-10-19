@@ -1,6 +1,7 @@
 # Required environment variables:
 # - ZLIB: path to a zlib build directory configured with libFuzzer
 # - ZLIB_AFL: path to a (different) zlib build directory configured with AFL
+# - ZLIB_SYMCC: path to a (yet another) zlib build directory configured with SymCC
 # Required programs in $PATH:
 # - clang
 # - clang++
@@ -27,11 +28,12 @@ override CXXFLAGS:=$(C_CXX_FLAGS) -std=c++17 -isystem libprotobuf-mutator -isyst
 override LDFLAGS:=-L$(OUTPUT)libprotobuf-mutator/build/src -L$(OUTPUT)libprotobuf-mutator/build/src/libfuzzer -L$(PROTOBUF_PATH)/lib $(LDFLAGS)
 ZLIB?=$(OUTPUT)zlib-ng/build-libfuzzer
 ZLIB_AFL?=$(OUTPUT)zlib-ng/build-afl
+ZLIB_SYMCC?=$(OUTPUT)zlib-ng/build-symcc
 LIBZ_A:=$(ZLIB)/libz.a
 LIBZ_A_AFL:=$(ZLIB_AFL)/libz.a
+LIBZ_A_SYMCC:=$(ZLIB_SYMCC)/libz.a
 override ZLIB_NG_CMFLAGS:=-DCMAKE_BUILD_TYPE=RelWithDebInfo -DZLIB_COMPAT=ON $(ZLIB_NG_CMFLAGS)
 SYMCC=$(ABS_OUTPUT)symcc/build/symcc
-SYMCC=$(ABS_OUTPUT)symcc/build/sym++
 
 .PHONY: all
 all: $(OUTPUT)fuzz $(OUTPUT)fuzz_libprotobuf_mutator $(OUTPUT)fuzz_afl
@@ -133,10 +135,26 @@ $(OUTPUT)symcc/build/Makefile: symcc/CMakeLists.txt
 		-DZ3_TRUST_SYSTEM_VERSION=ON \
 		$(SYMCC_CMFLAGS)
 
-$(SYMCC) $(SYMCXX): \
+$(SYMCC): \
 		$(OUTPUT)symcc/build/Makefile \
 		$(foreach file,$(shell git -C symcc ls-files),symcc/$(file))
 	cd $(OUTPUT)symcc/build && $(MAKE)
+
+$(OUTPUT)zlib-ng/build-symcc/Makefile: \
+		zlib-ng/CMakeLists.txt \
+		$(SYMCC)
+	mkdir -p $(OUTPUT)zlib-ng/build-symcc && \
+		cmake \
+			-S zlib-ng \
+			-B $(OUTPUT)zlib-ng/build-symcc \
+			-DCMAKE_C_COMPILER=$(SYMCC) \
+			-DWITH_SSE2=OFF \
+			$(ZLIB_NG_CMFLAGS)
+
+$(OUTPUT)zlib-ng/build-symcc/libz.a: \
+		$(OUTPUT)zlib-ng/build-symcc/Makefile \
+		$(foreach file,$(shell git -C zlib-ng ls-files),zlib-ng/$(file))
+	cd $(OUTPUT)zlib-ng/build-symcc && $(MAKE)
 
 .PHONY: fmt
 fmt:
