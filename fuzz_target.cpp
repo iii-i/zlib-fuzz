@@ -152,6 +152,18 @@ static int Deflate(z_stream *Strm, int Flush) {
   return Err;
 }
 
+static int DeflateParams(z_stream *Strm, int Level, int Strategy) {
+  if (Debug)
+    fprintf(stderr,
+            "Strm.avail_in = %u; Strm.avail_out = %u; "
+            "assert(deflateParams(&Strm, %i, %s) = ",
+            Strm->avail_in, Strm->avail_out, Level, StrategyStr(Strategy));
+  int Err = deflateParams(Strm, Level, Strategy);
+  if (Debug)
+    fprintf(stderr, "%s);\n", ErrStr(Err));
+  return Err;
+}
+
 static int InflateSetDictionary(z_stream *Strm, const Bytef *Dict,
                                 size_t DictLen) {
   if (Debug) {
@@ -178,32 +190,31 @@ static int Inflate(z_stream *Strm, int Flush) {
 }
 
 struct Avail {
-  z_stream *const Strm;
-  const uInt AvailIn0;
-  const uInt AvailIn1;
-  const uInt AvailOut0;
-  const uInt AvailOut1;
-
-  Avail(z_stream *Strm, uInt MaxAvailIn, uInt MaxAvailOut)
-      : Strm(Strm), AvailIn0(Strm->avail_in),
-        AvailIn1(AvailIn0 < MaxAvailIn ? AvailIn0 : MaxAvailIn),
-        AvailOut0(Strm->avail_out),
-        AvailOut1(AvailOut0 < MaxAvailOut ? AvailOut0 : MaxAvailOut) {
-    Strm->avail_in = AvailIn1;
-    Strm->avail_out = AvailOut1;
-  }
-
-  template <typename OpT>
-  Avail(z_stream *Strm, const OpT &Op)
-      : Avail(Strm, (uInt)Op.avail_in(), (uInt)Op.avail_out()) {}
-
-  ~Avail() {
-    uInt ConsumedIn = AvailIn1 - Strm->avail_in;
-    Strm->avail_in = AvailIn0 - ConsumedIn;
-    uInt ConsumedOut = AvailOut1 - Strm->avail_out;
-    Strm->avail_out = AvailOut0 - ConsumedOut;
-  }
+  z_stream *Strm;
+  uInt AvailIn0;
+  uInt AvailIn1;
+  uInt AvailOut0;
+  uInt AvailOut1;
 };
+
+void AvailInit(struct Avail *Self, z_stream *Strm, uInt MaxAvailIn,
+               uInt MaxAvailOut) {
+  Self->Strm = Strm;
+  Self->AvailIn0 = Strm->avail_in;
+  Self->AvailIn1 = Self->AvailIn0 < MaxAvailIn ? Self->AvailIn0 : MaxAvailIn;
+  Self->AvailOut0 = Strm->avail_out;
+  Self->AvailOut1 =
+      Self->AvailOut0 < MaxAvailOut ? Self->AvailOut0 : MaxAvailOut;
+  Strm->avail_in = Self->AvailIn1;
+  Strm->avail_out = Self->AvailOut1;
+}
+
+void AvailEnd(struct Avail *Self) {
+  uInt ConsumedIn = Self->AvailIn1 - Self->Strm->avail_in;
+  Self->Strm->avail_in = Self->AvailIn0 - ConsumedIn;
+  uInt ConsumedOut = Self->AvailOut1 - Self->Strm->avail_out;
+  Self->Strm->avail_out = Self->AvailOut0 - ConsumedOut;
+}
 
 struct OpRunner {
   z_stream *const Strm;
@@ -212,32 +223,30 @@ struct OpRunner {
   OpRunner(z_stream *Strm, bool Check) : Strm(Strm), Check(Check) {}
 
   int operator()(const class Deflate &Op) const {
-    Avail Avail(Strm, Op);
+    Avail Avail;
+    AvailInit(&Avail, Strm, Op.avail_in(), Op.avail_out());
     int Err = Deflate(Strm, Op.flush());
+    AvailEnd(&Avail);
     if (Check)
       assert(Err == Z_OK || Err == Z_BUF_ERROR);
     return Err;
   }
 
   int operator()(const class DeflateParams &Op) const {
-    Avail Avail(Strm, Op);
-    if (Debug)
-      fprintf(stderr,
-              "Strm.avail_in = %u; Strm.avail_out = %u; "
-              "assert(deflateParams(&Strm, %i, %s) = ",
-              Strm->avail_in, Strm->avail_out, Op.level(),
-              StrategyStr(Op.strategy()));
-    int Err = deflateParams(Strm, Op.level(), Op.strategy());
-    if (Debug)
-      fprintf(stderr, "%s);\n", ErrStr(Err));
+    Avail Avail;
+    AvailInit(&Avail, Strm, Op.avail_in(), Op.avail_out());
+    int Err = DeflateParams(Strm, Op.level(), Op.strategy());
+    AvailEnd(&Avail);
     if (Check)
       assert(Err == Z_OK || Err == Z_BUF_ERROR);
     return Err;
   }
 
   int operator()(const class Inflate &Op) const {
-    Avail Avail(Strm, Op);
+    Avail Avail;
+    AvailInit(&Avail, Strm, Op.avail_in(), Op.avail_out());
     int Err = Inflate(Strm, Op.flush());
+    AvailEnd(&Avail);
     if (Check)
       assert(Err == Z_OK || Err == Z_STREAM_END || Err == Z_NEED_DICT ||
              Err == Z_BUF_ERROR);
@@ -612,10 +621,12 @@ static void RunPlan(Plan &Plan) {
   } else {
     uInt FinishAvailOutNumerator = Strm.avail_out;
     for (int i = 0; i < FinishCount; i++) {
-      Avail Avail(&Strm, Strm.avail_in,
-                  (Plan.finish_avail_outs(i) * FinishAvailOutNumerator) /
-                      FinishAvailOutDenominator);
+      Avail Avail;
+      AvailInit(&Avail, &Strm, Strm.avail_in,
+                (Plan.finish_avail_outs(i) * FinishAvailOutNumerator) /
+                    FinishAvailOutDenominator);
       Err = Deflate(&Strm, Z_FINISH);
+      AvailEnd(&Avail);
       if (Err == Z_STREAM_END)
         break;
       assert(Err == Z_OK || Err == Z_BUF_ERROR);
