@@ -486,11 +486,6 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
 }
 #endif
 
-static void FixupPlan(Plan *Plan) {
-  if (Plan->data().size() == 0)
-    Plan->set_data("!");
-}
-
 static void RunInflate(const Plan &Plan, const uint8_t *Compressed,
                        uInt ActualCompressedSize, bool Check) {
   if (Debug) {
@@ -668,7 +663,6 @@ template <typename OpsT> static void FixupOps(OpsT *Ops) {
 
 static protobuf_mutator::libfuzzer::PostProcessorRegistration<Plan> reg = {
     [](Plan *Plan, unsigned int /* Seed */) {
-      FixupPlan(Plan);
       if (Plan->window_bits() == WB_DEFAULT)
         Plan->set_window_bits(WB_ZLIB);
       if (Plan->mem_level() == MEM_LEVEL_DEFAULT)
@@ -687,10 +681,8 @@ DEFINE_PROTO_FUZZER(const Plan &Plan) {
 #else
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   Plan Plan;
-  if (GeneratePlan(Plan, Data, Size)) {
-    FixupPlan(&Plan);
+  if (GeneratePlan(Plan, Data, Size))
     RunPlan(Plan);
-  }
   return 0;
 }
 #endif
