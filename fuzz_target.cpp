@@ -216,7 +216,7 @@ void AvailEnd(struct Avail *Self) {
   Self->Strm->avail_out = Self->AvailOut0 - ConsumedOut;
 }
 
-static int RunDeflateOp(z_stream *Strm, const DeflateOp *Op, bool Check) {
+static int RunDeflateOp(z_stream *Strm, const PbDeflateOp *Op, bool Check) {
   if (Op->has_deflate()) {
     Avail Avail;
     AvailInit(&Avail, Strm, Op->deflate().avail_in(),
@@ -239,12 +239,12 @@ static int RunDeflateOp(z_stream *Strm, const DeflateOp *Op, bool Check) {
   } else if (Op->op_case() == 0)
     return 0;
   else {
-    fprintf(stderr, "Unexpected DeflateOp->op_case() = %i\n", Op->op_case());
+    fprintf(stderr, "Unexpected PbDeflateOp->op_case() = %i\n", Op->op_case());
     assert(0);
   }
 }
 
-static int RunInflateOp(z_stream *Strm, const InflateOp *Op, bool Check) {
+static int RunInflateOp(z_stream *Strm, const PbInflateOp *Op, bool Check) {
   if (Op->has_inflate()) {
     Avail Avail;
     AvailInit(&Avail, Strm, Op->inflate().avail_in(),
@@ -258,33 +258,33 @@ static int RunInflateOp(z_stream *Strm, const InflateOp *Op, bool Check) {
   } else if (Op->op_case() == 0)
     return 0;
   else {
-    fprintf(stderr, "Unexpected InflateOp->op_case() = %i\n", Op->op_case());
+    fprintf(stderr, "Unexpected PbInflateOp->op_case() = %i\n", Op->op_case());
     assert(0);
   }
 }
 
 #ifndef USE_LIBPROTOBUF_MUTATOR
-static Level ChooseLevel(uint8_t Choice) {
+static PbLevel ChooseLevel(uint8_t Choice) {
   if (Choice < 128)
-    return (Level)((Choice % 11) - 1);
+    return (PbLevel)((Choice % 11) - 1);
   else
     return PB_Z_BEST_SPEED;
 }
 
-static WindowBits ChooseWindowBits(uint8_t Choice) {
+static PbWindowBits ChooseWindowBits(uint8_t Choice) {
   if (Choice < 85)
-    return WB_RAW;
+    return PB_WB_RAW;
   else if (Choice < 170)
-    return WB_ZLIB;
+    return PB_WB_ZLIB;
   else
-    return WB_GZIP;
+    return PB_WB_GZIP;
 }
 
-static MemLevel ChooseMemLevel(uint8_t Choice) {
-  return (MemLevel)((Choice % 9) + 1);
+static PbMemLevel ChooseMemLevel(uint8_t Choice) {
+  return (PbMemLevel)((Choice % 9) + 1);
 }
 
-static Strategy ChooseStrategy(uint8_t Choice) {
+static PbStrategy ChooseStrategy(uint8_t Choice) {
   if (Choice < 43)
     return PB_Z_FILTERED;
   else if (Choice < 86)
@@ -297,7 +297,7 @@ static Strategy ChooseStrategy(uint8_t Choice) {
     return PB_Z_DEFAULT_STRATEGY;
 }
 
-static DeflateFlush ChooseDeflateFlush(uint8_t Choice) {
+static PbDeflateFlush ChooseDeflateFlush(uint8_t Choice) {
   if (Choice < 32)
     return PB_DEFLATE_Z_PARTIAL_FLUSH;
   else if (Choice < 64)
@@ -310,7 +310,7 @@ static DeflateFlush ChooseDeflateFlush(uint8_t Choice) {
     return PB_DEFLATE_Z_NO_FLUSH;
 }
 
-static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
+static bool GeneratePlan(PbPlan &Plan, const uint8_t *&Data, size_t &Size) {
 #define POP(X)                                                                 \
   if (Size < sizeof(X))                                                        \
     return false;                                                              \
@@ -331,7 +331,7 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
   POP(InitialStrategyChoice);
   Plan.set_strategy(ChooseStrategy(InitialStrategyChoice));
 
-  if (Plan.window_bits() != WB_GZIP) {
+  if (Plan.window_bits() != PB_WB_GZIP) {
     uint8_t DictLen;
     POP(DictLen);
     if (DictLen > 0 && DictLen < 128) {
@@ -350,7 +350,7 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
   if (DeflateOpCount > MaxDeflateOpCount)
     DeflateOpCount = MaxDeflateOpCount;
   for (size_t i = 0; i < DeflateOpCount; i++) {
-    DeflateOp *Op = Plan.add_deflate_ops();
+    PbDeflateOp *Op = Plan.add_deflate_ops();
     uint8_t AvailIn;
     POP(AvailIn);
     AvailIn++;
@@ -360,8 +360,8 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
     uint8_t KindChoice;
     POP(KindChoice);
     if (KindChoice < 32) {
-      std::unique_ptr<class DeflateParams> DeflateParams =
-          std::make_unique<class DeflateParams>();
+      std::unique_ptr<PbDeflateParams> DeflateParams =
+          std::make_unique<PbDeflateParams>();
       DeflateParams->set_avail_in(AvailIn);
       DeflateParams->set_avail_out(AvailOut);
       uint8_t LevelChoice;
@@ -372,8 +372,7 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
       DeflateParams->set_strategy(ChooseStrategy(StrategyChoice));
       Op->set_allocated_deflate_params(DeflateParams.release());
     } else {
-      std::unique_ptr<class Deflate> Deflate =
-          std::make_unique<class Deflate>();
+      std::unique_ptr<PbDeflate> Deflate = std::make_unique<PbDeflate>();
       Deflate->set_avail_in(AvailIn);
       Deflate->set_avail_out(AvailOut);
       uint8_t FlushChoice;
@@ -397,14 +396,14 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
   if (InflateOpCount > MaxInflateOpCount)
     InflateOpCount = MaxInflateOpCount;
   for (size_t i = 0; i < InflateOpCount; i++) {
-    InflateOp *Op = Plan.add_inflate_ops();
+    PbInflateOp *Op = Plan.add_inflate_ops();
     uint8_t AvailIn;
     POP(AvailIn);
     AvailIn++;
     uint8_t AvailOut;
     POP(AvailOut);
     AvailOut++;
-    std::unique_ptr<class Inflate> Inflate = std::make_unique<class Inflate>();
+    std::unique_ptr<PbInflate> Inflate = std::make_unique<PbInflate>();
     Inflate->set_avail_in(AvailIn);
     Inflate->set_avail_out(AvailOut);
     Inflate->set_flush(PB_INFLATE_Z_NO_FLUSH);
@@ -431,7 +430,7 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
 }
 #endif
 
-static void RunPlanInflate(const Plan *Plan, const uint8_t *Compressed,
+static void RunPlanInflate(const PbPlan *Plan, const uint8_t *Compressed,
                            uInt ActualCompressedSize, bool Check) {
   if (Debug) {
     fprintf(stderr, "/* n_inflate_ops == %i; */\n", Plan->inflate_ops_size());
@@ -441,14 +440,14 @@ static void RunPlanInflate(const Plan *Plan, const uint8_t *Compressed,
   z_stream Strm;
   memset(&Strm, 0, sizeof(Strm));
   int WindowBits = Plan->window_bits();
-  if (WindowBits == WB_DEFAULT)
-    WindowBits = WB_ZLIB;
+  if (WindowBits == PB_WB_DEFAULT)
+    WindowBits = PB_WB_ZLIB;
   int Err = inflateInit2(&Strm, WindowBits);
   if (Debug)
     fprintf(stderr, "assert(inflateInit2(&Strm, %i) == %s);\n", WindowBits,
             ErrStr(Err));
   assert(Err == Z_OK);
-  if (Plan->dict().size() > 0 && WindowBits == WB_RAW) {
+  if (Plan->dict().size() > 0 && WindowBits == PB_WB_RAW) {
     Err = InflateSetDictionary(&Strm, (const Bytef *)Plan->dict().c_str(),
                                Plan->dict().size());
     assert(Err == Z_OK);
@@ -464,7 +463,7 @@ static void RunPlanInflate(const Plan *Plan, const uint8_t *Compressed,
     Err = RunInflateOp(&Strm, &Plan->inflate_ops(i), Check);
     if (Err == Z_NEED_DICT) {
       if (Check)
-        assert(Plan->dict().size() > 0 && WindowBits == WB_ZLIB);
+        assert(Plan->dict().size() > 0 && WindowBits == PB_WB_ZLIB);
       Err = InflateSetDictionary(&Strm, (const Bytef *)Plan->dict().c_str(),
                                  Plan->dict().size());
       if (Check)
@@ -475,7 +474,7 @@ static void RunPlanInflate(const Plan *Plan, const uint8_t *Compressed,
     Err = Inflate(&Strm, Z_NO_FLUSH);
     if (Err == Z_NEED_DICT) {
       if (Check)
-        assert(Plan->dict().size() > 0 && WindowBits == WB_ZLIB);
+        assert(Plan->dict().size() > 0 && WindowBits == PB_WB_ZLIB);
       Err = InflateSetDictionary(&Strm, (const Bytef *)Plan->dict().c_str(),
                                  Plan->dict().size());
       if (Check)
@@ -496,7 +495,7 @@ static void RunPlanInflate(const Plan *Plan, const uint8_t *Compressed,
   assert(Err == Z_OK);
 }
 
-static void RunPlan(const Plan *Plan) {
+static void RunPlan(const PbPlan *Plan) {
   size_t CompressedSize =
       Plan->data().size() * 2 + (Plan->deflate_ops_size() + 1) * 128;
   if (Debug) {
@@ -509,11 +508,11 @@ static void RunPlan(const Plan *Plan) {
   z_stream Strm;
   memset(&Strm, 0, sizeof(Strm));
   int WindowBits = Plan->window_bits();
-  if (WindowBits == WB_DEFAULT)
-    WindowBits = WB_ZLIB;
+  if (WindowBits == PB_WB_DEFAULT)
+    WindowBits = PB_WB_ZLIB;
   int MemLevel = Plan->mem_level();
-  if (MemLevel == MEM_LEVEL_DEFAULT)
-    MemLevel = MEM_LEVEL8;
+  if (MemLevel == PB_MEM_LEVEL_DEFAULT)
+    MemLevel = PB_MEM_LEVEL8;
   int Err = deflateInit2(&Strm, Plan->level(), Z_DEFLATED, WindowBits, MemLevel,
                          Plan->strategy());
   if (Debug)
@@ -522,7 +521,7 @@ static void RunPlan(const Plan *Plan) {
             Plan->level(), WindowBits, MemLevel, StrategyStr(Plan->strategy()),
             ErrStr(Err));
   assert(Err == Z_OK);
-  if (Plan->dict().size() > 0 && WindowBits != WB_GZIP) {
+  if (Plan->dict().size() > 0 && WindowBits != PB_WB_GZIP) {
     Err = DeflateSetDictionary(&Strm, (const Bytef *)Plan->dict().c_str(),
                                Plan->dict().size());
     assert(Err == Z_OK);
@@ -590,10 +589,10 @@ static void RunPlan(const Plan *Plan) {
 }
 
 #ifdef USE_LIBPROTOBUF_MUTATOR
-DEFINE_PROTO_FUZZER(const Plan &Plan) { RunPlan(&Plan); }
+DEFINE_PROTO_FUZZER(const PbPlan &Plan) { RunPlan(&Plan); }
 #else
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
-  Plan Plan;
+  PbPlan Plan;
   if (GeneratePlan(Plan, Data, Size))
     RunPlan(&Plan);
   return 0;

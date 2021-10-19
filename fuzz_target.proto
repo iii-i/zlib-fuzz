@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-enum DeflateFlush {
+enum PbDeflateFlush {
   PB_DEFLATE_Z_NO_FLUSH = 0;
   PB_DEFLATE_Z_PARTIAL_FLUSH = 1;
   PB_DEFLATE_Z_SYNC_FLUSH = 2;
@@ -8,25 +8,25 @@ enum DeflateFlush {
   PB_DEFLATE_Z_BLOCK = 5;
 }
 
-enum InflateFlush {
+enum PbInflateFlush {
   PB_INFLATE_Z_NO_FLUSH = 0;
 }
 
-enum Level {
+enum PbLevel {
   PB_Z_NO_COMPRESSION = 0;
   PB_Z_BEST_SPEED = 1;
-  Z_LEVEL2 = 2;
-  Z_LEVEL3 = 3;
-  Z_LEVEL4 = 4;
-  Z_LEVEL5 = 5;
-  Z_LEVEL6 = 6;
-  Z_LEVEL7 = 7;
-  Z_LEVEL8 = 8;
+  PB_Z_LEVEL2 = 2;
+  PB_Z_LEVEL3 = 3;
+  PB_Z_LEVEL4 = 4;
+  PB_Z_LEVEL5 = 5;
+  PB_Z_LEVEL6 = 6;
+  PB_Z_LEVEL7 = 7;
+  PB_Z_LEVEL8 = 8;
   PB_Z_BEST_COMPRESSION = 9;
   PB_Z_DEFAULT_COMPRESSION = -1;
 }
 
-enum Strategy {
+enum PbStrategy {
   PB_Z_DEFAULT_STRATEGY = 0;
   PB_Z_FILTERED = 1;
   PB_Z_HUFFMAN_ONLY = 2;
@@ -34,68 +34,68 @@ enum Strategy {
   PB_Z_FIXED = 4;
 }
 
-enum WindowBits {
-  WB_DEFAULT = 0;
-  WB_RAW = -15;
-  WB_ZLIB = 15;
-  WB_GZIP = 31;
+enum PbWindowBits {
+  PB_WB_DEFAULT = 0;
+  PB_WB_RAW = -15;
+  PB_WB_ZLIB = 15;
+  PB_WB_GZIP = 31;
 }
 
-enum MemLevel {
-  MEM_LEVEL_DEFAULT = 0;
-  MEM_LEVEL1 = 1;
-  MEM_LEVEL2 = 2;
-  MEM_LEVEL3 = 3;
-  MEM_LEVEL4 = 4;
-  MEM_LEVEL5 = 5;
-  MEM_LEVEL6 = 6;
-  MEM_LEVEL7 = 7;
-  MEM_LEVEL8 = 8;
+enum PbMemLevel {
+  PB_MEM_LEVEL_DEFAULT = 0;
+  PB_MEM_LEVEL1 = 1;
+  PB_MEM_LEVEL2 = 2;
+  PB_MEM_LEVEL3 = 3;
+  PB_MEM_LEVEL4 = 4;
+  PB_MEM_LEVEL5 = 5;
+  PB_MEM_LEVEL6 = 6;
+  PB_MEM_LEVEL7 = 7;
+  PB_MEM_LEVEL8 = 8;
   PB_MAX_MEM_LEVEL = 9;
 }
 
-message Deflate {
+message PbDeflate {
   int32 avail_in = 1;
   int32 avail_out = 2;
-  DeflateFlush flush = 3;
+  PbDeflateFlush flush = 3;
 }
 
-message DeflateParams {
+message PbDeflateParams {
   int32 avail_in = 1;
   int32 avail_out = 2;
-  Level level = 3;
-  Strategy strategy = 4;
+  PbLevel level = 3;
+  PbStrategy strategy = 4;
 }
 
-message Inflate {
+message PbInflate {
   int32 avail_in = 1;
   int32 avail_out = 2;
-  InflateFlush flush = 3;
+  PbInflateFlush flush = 3;
 }
 
-message DeflateOp {
+message PbDeflateOp {
   oneof op {
-    Deflate deflate = 1;
-    DeflateParams deflate_params = 2;
+    PbDeflate deflate = 1;
+    PbDeflateParams deflate_params = 2;
   }
 }
 
-message InflateOp {
+message PbInflateOp {
   oneof op {
-    Inflate inflate = 1;
+    PbInflate inflate = 1;
   }
 }
 
-message Plan {
+message PbPlan {
   bytes data = 1;
-  Level level = 2;
-  WindowBits window_bits = 3;
-  MemLevel mem_level = 4;
-  Strategy strategy = 5;
+  PbLevel level = 2;
+  PbWindowBits window_bits = 3;
+  PbMemLevel mem_level = 4;
+  PbStrategy strategy = 5;
   bytes dict = 6;
-  repeated DeflateOp deflate_ops = 7;
+  repeated PbDeflateOp deflate_ops = 7;
   repeated int32 finish_avail_outs = 8;
-  repeated InflateOp inflate_ops = 9;
+  repeated PbInflateOp inflate_ops = 9;
   int32 tail_size = 10;
   repeated int32 bit_flips = 11;
 }
