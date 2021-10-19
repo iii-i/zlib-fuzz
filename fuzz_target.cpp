@@ -13,13 +13,12 @@
 
 #include "fuzz_target.pb.h"
 
-static_assert(PB_Z_NO_FLUSH == Z_NO_FLUSH);
-static_assert(PB_Z_PARTIAL_FLUSH == Z_PARTIAL_FLUSH);
-static_assert(PB_Z_SYNC_FLUSH == Z_SYNC_FLUSH);
-static_assert(PB_Z_FULL_FLUSH == Z_FULL_FLUSH);
-static_assert(PB_Z_FINISH == Z_FINISH);
-static_assert(PB_Z_BLOCK == Z_BLOCK);
-static_assert(PB_Z_TREES == Z_TREES);
+static_assert(PB_DEFLATE_Z_NO_FLUSH == Z_NO_FLUSH);
+static_assert(PB_DEFLATE_Z_PARTIAL_FLUSH == Z_PARTIAL_FLUSH);
+static_assert(PB_DEFLATE_Z_SYNC_FLUSH == Z_SYNC_FLUSH);
+static_assert(PB_DEFLATE_Z_FULL_FLUSH == Z_FULL_FLUSH);
+static_assert(PB_DEFLATE_Z_BLOCK == Z_BLOCK);
+static_assert(PB_INFLATE_Z_NO_FLUSH == Z_NO_FLUSH);
 static_assert(PB_Z_NO_COMPRESSION == Z_NO_COMPRESSION);
 static_assert(PB_Z_BEST_SPEED == Z_BEST_SPEED);
 static_assert(PB_Z_BEST_COMPRESSION == Z_BEST_COMPRESSION);
@@ -352,17 +351,17 @@ static Strategy ChooseStrategy(uint8_t Choice) {
     return PB_Z_DEFAULT_STRATEGY;
 }
 
-static Flush ChooseDeflateFlush(uint8_t Choice) {
+static DeflateFlush ChooseDeflateFlush(uint8_t Choice) {
   if (Choice < 32)
-    return PB_Z_PARTIAL_FLUSH;
+    return PB_DEFLATE_Z_PARTIAL_FLUSH;
   else if (Choice < 64)
-    return PB_Z_SYNC_FLUSH;
+    return PB_DEFLATE_Z_SYNC_FLUSH;
   else if (Choice < 96)
-    return PB_Z_FULL_FLUSH;
+    return PB_DEFLATE_Z_FULL_FLUSH;
   else if (Choice < 128)
-    return PB_Z_BLOCK;
+    return PB_DEFLATE_Z_BLOCK;
   else
-    return PB_Z_NO_FLUSH;
+    return PB_DEFLATE_Z_NO_FLUSH;
 }
 
 static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
@@ -462,7 +461,7 @@ static bool GeneratePlan(Plan &Plan, const uint8_t *&Data, size_t &Size) {
     std::unique_ptr<class Inflate> Inflate = std::make_unique<class Inflate>();
     Inflate->set_avail_in(AvailIn);
     Inflate->set_avail_out(AvailOut);
-    Inflate->set_flush(PB_Z_NO_FLUSH);
+    Inflate->set_flush(PB_INFLATE_Z_NO_FLUSH);
     Op->set_allocated_inflate(Inflate.release());
   }
 
@@ -637,24 +636,12 @@ static void RunPlan(Plan &Plan) {
 }
 
 #ifdef USE_LIBPROTOBUF_MUTATOR
-static void FixupOp(DeflateOp *Op) {
-  if (Op->has_deflate() && (Op->deflate().flush() == PB_Z_FINISH ||
-                            Op->deflate().flush() == PB_Z_TREES))
-    Op->mutable_deflate()->set_flush(PB_Z_NO_FLUSH);
-}
-
-static void FixupOp(InflateOp *Op) {
-  if (Op->has_inflate())
-    Op->mutable_inflate()->set_flush(PB_Z_NO_FLUSH);
-}
-
 template <typename OpsT> static void FixupOps(OpsT *Ops) {
   int Pos = 0;
   for (int i = 0, size = Ops->size(); i < size; i++) {
     typename OpsT::value_type &Op = (*Ops)[i];
     if (Op.op_case() == 0)
       continue;
-    FixupOp(&Op);
     Ops->SwapElements(Pos, i);
     Pos++;
   }

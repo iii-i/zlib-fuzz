@@ -1,13 +1,15 @@
 syntax = "proto3";
 
-enum Flush {
-  PB_Z_NO_FLUSH = 0;
-  PB_Z_PARTIAL_FLUSH = 1;
-  PB_Z_SYNC_FLUSH = 2;
-  PB_Z_FULL_FLUSH = 3;
-  PB_Z_FINISH = 4;
-  PB_Z_BLOCK = 5;
-  PB_Z_TREES = 6;
+enum DeflateFlush {
+  PB_DEFLATE_Z_NO_FLUSH = 0;
+  PB_DEFLATE_Z_PARTIAL_FLUSH = 1;
+  PB_DEFLATE_Z_SYNC_FLUSH = 2;
+  PB_DEFLATE_Z_FULL_FLUSH = 3;
+  PB_DEFLATE_Z_BLOCK = 5;
+}
+
+enum InflateFlush {
+  PB_INFLATE_Z_NO_FLUSH = 0;
 }
 
 enum Level {
@@ -55,7 +57,7 @@ enum MemLevel {
 message Deflate {
   int32 avail_in = 1;
   int32 avail_out = 2;
-  Flush flush = 3;
+  DeflateFlush flush = 3;
 }
 
 message DeflateParams {
@@ -68,7 +70,7 @@ message DeflateParams {
 message Inflate {
   int32 avail_in = 1;
   int32 avail_out = 2;
-  Flush flush = 3;
+  InflateFlush flush = 3;
 }
 
 message DeflateOp {
