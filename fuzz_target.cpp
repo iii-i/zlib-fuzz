@@ -1,6 +1,5 @@
 #include <assert.h>
-#include <memory>
-#include <optional>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +12,12 @@
 
 #ifdef USE_LIBPROTOBUF_MUTATOR
 #include "fuzz_target.pb.h"
+#endif
+
+#ifdef __cplusplus
+#define EXTERN_C extern "C"
+#else
+#define EXTERN_C
 #endif
 
 /* Constants. */
@@ -284,37 +289,45 @@ static void PlanExecutionInit(struct PlanExecution *PE, const PbPlan *Plan) {
   PE->BitFlipIdx = 0;
 }
 
-static const char *GetPlainData(PlanExecution *PE) {
+static const char *GetPlainData(struct PlanExecution *PE) {
   return PE->Plan->data().c_str();
 }
 
-static size_t GetPlainDataSize(PlanExecution *PE) {
+static size_t GetPlainDataSize(struct PlanExecution *PE) {
   return PE->Plan->data().size();
 }
 
-static int GetInitialLevel(PlanExecution *PE) { return PE->Plan->level(); }
+static int GetInitialLevel(struct PlanExecution *PE) {
+  return PE->Plan->level();
+}
 
-static int GetWindowBits(PlanExecution *PE) { return PE->Plan->window_bits(); }
+static int GetWindowBits(struct PlanExecution *PE) {
+  return PE->Plan->window_bits();
+}
 
-static int GetMemLevel(PlanExecution *PE) { return PE->Plan->mem_level(); }
+static int GetMemLevel(struct PlanExecution *PE) {
+  return PE->Plan->mem_level();
+}
 
-static int GetInitialStrategy(PlanExecution *PE) {
+static int GetInitialStrategy(struct PlanExecution *PE) {
   return PE->Plan->strategy();
 }
 
-static const char *GetDict(PlanExecution *PE) {
+static const char *GetDict(struct PlanExecution *PE) {
   return PE->Plan->dict().c_str();
 }
 
-static size_t GetDictSize(PlanExecution *PE) { return PE->Plan->dict().size(); }
+static size_t GetDictSize(struct PlanExecution *PE) {
+  return PE->Plan->dict().size();
+}
 
-static size_t GetDeflateOpCount(PlanExecution *PE) {
+static size_t GetDeflateOpCount(struct PlanExecution *PE) {
   return PE->Plan->deflate_ops_size();
 }
 
-static void NextDeflateOp(PlanExecution *PE) { PE->DeflateOpIdx++; }
+static void NextDeflateOp(struct PlanExecution *PE) { PE->DeflateOpIdx++; }
 
-static enum DeflateOpType GetDeflateOpType(PlanExecution *PE) {
+static enum DeflateOpType GetDeflateOpType(struct PlanExecution *PE) {
   int op_case = PE->Plan->deflate_ops(PE->DeflateOpIdx).op_case();
   switch (op_case) {
   case PbDeflateOp::OP_NOT_SET:
@@ -329,51 +342,51 @@ static enum DeflateOpType GetDeflateOpType(PlanExecution *PE) {
   }
 }
 
-static uInt GetDeflateAvailIn(PlanExecution *PE) {
+static uInt GetDeflateAvailIn(struct PlanExecution *PE) {
   return PE->Plan->deflate_ops(PE->DeflateOpIdx).deflate().avail_in();
 }
 
-static uInt GetDeflateAvailOut(PlanExecution *PE) {
+static uInt GetDeflateAvailOut(struct PlanExecution *PE) {
   return PE->Plan->deflate_ops(PE->DeflateOpIdx).deflate().avail_out();
 }
 
-static int GetDeflateFlush(PlanExecution *PE) {
+static int GetDeflateFlush(struct PlanExecution *PE) {
   return PE->Plan->deflate_ops(PE->DeflateOpIdx).deflate().flush();
 }
 
-static uInt GetDeflateParamsAvailIn(PlanExecution *PE) {
+static uInt GetDeflateParamsAvailIn(struct PlanExecution *PE) {
   return PE->Plan->deflate_ops(PE->DeflateOpIdx).deflate_params().avail_in();
 }
 
-static uInt GetDeflateParamsAvailOut(PlanExecution *PE) {
+static uInt GetDeflateParamsAvailOut(struct PlanExecution *PE) {
   return PE->Plan->deflate_ops(PE->DeflateOpIdx).deflate_params().avail_out();
 }
 
-static int GetDeflateParamsLevel(PlanExecution *PE) {
+static int GetDeflateParamsLevel(struct PlanExecution *PE) {
   return PE->Plan->deflate_ops(PE->DeflateOpIdx).deflate_params().level();
 }
 
-static int GetDeflateParamsStrategy(PlanExecution *PE) {
+static int GetDeflateParamsStrategy(struct PlanExecution *PE) {
   return PE->Plan->deflate_ops(PE->DeflateOpIdx).deflate_params().strategy();
 }
 
-static size_t GetFinishOpCount(PlanExecution *PE) {
+static size_t GetFinishOpCount(struct PlanExecution *PE) {
   return PE->Plan->finish_avail_outs().size();
 }
 
-static void NextFinishOp(PlanExecution *PE) { PE->FinishOpIdx++; }
+static void NextFinishOp(struct PlanExecution *PE) { PE->FinishOpIdx++; }
 
-static uInt GetFinishAvailOut(PlanExecution *PE) {
+static uInt GetFinishAvailOut(struct PlanExecution *PE) {
   return PE->Plan->finish_avail_outs(PE->FinishOpIdx);
 }
 
-static size_t GetInflateOpCount(PlanExecution *PE) {
+static size_t GetInflateOpCount(struct PlanExecution *PE) {
   return PE->Plan->inflate_ops_size();
 }
 
-static void NextInflateOp(PlanExecution *PE) { PE->InflateOpIdx++; }
+static void NextInflateOp(struct PlanExecution *PE) { PE->InflateOpIdx++; }
 
-static enum InflateOpType GetInflateOpType(PlanExecution *PE) {
+static enum InflateOpType GetInflateOpType(struct PlanExecution *PE) {
   int op_case = PE->Plan->inflate_ops(PE->InflateOpIdx).op_case();
   switch (op_case) {
   case PbInflateOp::OP_NOT_SET:
@@ -386,27 +399,29 @@ static enum InflateOpType GetInflateOpType(PlanExecution *PE) {
   }
 }
 
-static uInt GetInflateAvailIn(PlanExecution *PE) {
+static uInt GetInflateAvailIn(struct PlanExecution *PE) {
   return PE->Plan->inflate_ops(PE->InflateOpIdx).inflate().avail_in();
 }
 
-static uInt GetInflateAvailOut(PlanExecution *PE) {
+static uInt GetInflateAvailOut(struct PlanExecution *PE) {
   return PE->Plan->inflate_ops(PE->InflateOpIdx).inflate().avail_out();
 }
 
-static int GetInflateFlush(PlanExecution *PE) {
+static int GetInflateFlush(struct PlanExecution *PE) {
   return PE->Plan->inflate_ops(PE->InflateOpIdx).inflate().flush();
 }
 
-static int GetTailSize(PlanExecution *PE) { return PE->Plan->tail_size(); }
+static int GetTailSize(struct PlanExecution *PE) {
+  return PE->Plan->tail_size();
+}
 
-static size_t GetBitFlipCount(PlanExecution *PE) {
+static size_t GetBitFlipCount(struct PlanExecution *PE) {
   return PE->Plan->bit_flips().size();
 }
 
-static void NextBitFlip(PlanExecution *PE) { PE->BitFlipIdx++; }
+static void NextBitFlip(struct PlanExecution *PE) { PE->BitFlipIdx++; }
 
-static uInt GetBitFlip(PlanExecution *PE) {
+static uInt GetBitFlip(struct PlanExecution *PE) {
   return PE->Plan->bit_flips(PE->BitFlipIdx);
 }
 #else
@@ -508,110 +523,124 @@ static void PlanExecutionInit(struct PlanExecution *PE, const uint8_t *Data,
   PE->Size -= PE->PlainDataSize;
 }
 
-static const char *GetPlainData(PlanExecution *PE) { return PE->PlainData; }
+static const char *GetPlainData(struct PlanExecution *PE) {
+  return PE->PlainData;
+}
 
-static size_t GetPlainDataSize(PlanExecution *PE) { return PE->PlainDataSize; }
+static size_t GetPlainDataSize(struct PlanExecution *PE) {
+  return PE->PlainDataSize;
+}
 
-static int GetInitialLevel(PlanExecution *PE) {
+static int GetInitialLevel(struct PlanExecution *PE) {
   return ChooseLevel(POP(PE, uint8_t, 0));
 }
 
-static int GetWindowBits(PlanExecution *PE) { return PE->WindowBits; }
+static int GetWindowBits(struct PlanExecution *PE) { return PE->WindowBits; }
 
-static int GetMemLevel(PlanExecution *PE) {
+static int GetMemLevel(struct PlanExecution *PE) {
   return ChooseMemLevel(POP(PE, uint8_t, 0));
 }
 
-static int GetInitialStrategy(PlanExecution *PE) {
+static int GetInitialStrategy(struct PlanExecution *PE) {
   return ChooseStrategy(POP(PE, uint8_t, 0));
 }
 
-static const char *GetDict(PlanExecution *PE) { return PE->Dict; }
+static const char *GetDict(struct PlanExecution *PE) { return PE->Dict; }
 
-static size_t GetDictSize(PlanExecution *PE) { return PE->DictSize; }
+static size_t GetDictSize(struct PlanExecution *PE) { return PE->DictSize; }
 
-static size_t GetDeflateOpCount(PlanExecution *PE) {
+static size_t GetDeflateOpCount(struct PlanExecution *PE) {
   return POP(PE, uint8_t, 0);
 }
 
-static void NextDeflateOp(PlanExecution *PE) { (void)PE; }
+static void NextDeflateOp(struct PlanExecution *PE) { (void)PE; }
 
-static enum DeflateOpType GetDeflateOpType(PlanExecution *PE) {
+static enum DeflateOpType GetDeflateOpType(struct PlanExecution *PE) {
   return (enum DeflateOpType)(POP(PE, uint8_t, 0) % DeflateOpTypeMax);
 }
 
-static uInt GetDeflateAvailIn(PlanExecution *PE) { return POP(PE, uint8_t, 0); }
-
-static uInt GetDeflateAvailOut(PlanExecution *PE) {
+static uInt GetDeflateAvailIn(struct PlanExecution *PE) {
   return POP(PE, uint8_t, 0);
 }
 
-static int GetDeflateFlush(PlanExecution *PE) {
+static uInt GetDeflateAvailOut(struct PlanExecution *PE) {
+  return POP(PE, uint8_t, 0);
+}
+
+static int GetDeflateFlush(struct PlanExecution *PE) {
   return ChooseDeflateFlush(POP(PE, uint8_t, 0xff));
 }
 
-static uInt GetDeflateParamsAvailIn(PlanExecution *PE) {
+static uInt GetDeflateParamsAvailIn(struct PlanExecution *PE) {
   return POP(PE, uint8_t, 0);
 }
 
-static uInt GetDeflateParamsAvailOut(PlanExecution *PE) {
+static uInt GetDeflateParamsAvailOut(struct PlanExecution *PE) {
   return POP(PE, uint8_t, 0);
 }
 
-static int GetDeflateParamsLevel(PlanExecution *PE) {
+static int GetDeflateParamsLevel(struct PlanExecution *PE) {
   return ChooseLevel(POP(PE, uint8_t, 0xff));
 }
 
-static int GetDeflateParamsStrategy(PlanExecution *PE) {
+static int GetDeflateParamsStrategy(struct PlanExecution *PE) {
   return ChooseStrategy(POP(PE, uint8_t, 0xff));
 }
 
-static size_t GetFinishOpCount(PlanExecution *PE) {
+static size_t GetFinishOpCount(struct PlanExecution *PE) {
   return POP(PE, uint8_t, 0);
 }
 
-static void NextFinishOp(PlanExecution *PE) { (void)PE; }
+static void NextFinishOp(struct PlanExecution *PE) { (void)PE; }
 
-static uInt GetFinishAvailOut(PlanExecution *PE) { return POP(PE, uint8_t, 0); }
-
-static size_t GetInflateOpCount(PlanExecution *PE) {
+static uInt GetFinishAvailOut(struct PlanExecution *PE) {
   return POP(PE, uint8_t, 0);
 }
 
-static void NextInflateOp(PlanExecution *PE) { (void)PE; }
+static size_t GetInflateOpCount(struct PlanExecution *PE) {
+  return POP(PE, uint8_t, 0);
+}
 
-static enum InflateOpType GetInflateOpType(PlanExecution *PE) {
+static void NextInflateOp(struct PlanExecution *PE) { (void)PE; }
+
+static enum InflateOpType GetInflateOpType(struct PlanExecution *PE) {
   return (enum InflateOpType)(POP(PE, uint8_t, 0) % InflateOpTypeMax);
 }
 
-static uInt GetInflateAvailIn(PlanExecution *PE) { return POP(PE, uint8_t, 0); }
-
-static uInt GetInflateAvailOut(PlanExecution *PE) {
+static uInt GetInflateAvailIn(struct PlanExecution *PE) {
   return POP(PE, uint8_t, 0);
 }
 
-static int GetInflateFlush(PlanExecution *PE) {
+static uInt GetInflateAvailOut(struct PlanExecution *PE) {
+  return POP(PE, uint8_t, 0);
+}
+
+static int GetInflateFlush(struct PlanExecution *PE) {
   (void)PE;
   return Z_NO_FLUSH;
 }
 
-static int GetTailSize(PlanExecution *PE) { return POP(PE, uint8_t, 0); }
+static int GetTailSize(struct PlanExecution *PE) { return POP(PE, uint8_t, 0); }
 
-static size_t GetBitFlipCount(PlanExecution *PE) { return POP(PE, uint8_t, 0); }
+static size_t GetBitFlipCount(struct PlanExecution *PE) {
+  return POP(PE, uint8_t, 0);
+}
 
-static void NextBitFlip(PlanExecution *PE) { (void)PE; }
+static void NextBitFlip(struct PlanExecution *PE) { (void)PE; }
 
-static uInt GetBitFlip(PlanExecution *PE) { return POP(PE, uint16_t, 0); }
+static uInt GetBitFlip(struct PlanExecution *PE) {
+  return POP(PE, uint16_t, 0);
+}
 #endif
 
 /* Common fuzzing logic. */
 
-static int RunDeflateOp(z_stream *Strm, PlanExecution *PE, bool Check) {
+static int RunDeflateOp(z_stream *Strm, struct PlanExecution *PE, bool Check) {
   switch (GetDeflateOpType(PE)) {
   case DeflateOpTypeNone:
     return 0;
   case DeflateOpTypeDeflate: {
-    Avail Avail;
+    struct Avail Avail;
     AvailInit(&Avail, Strm, GetDeflateAvailIn(PE), GetDeflateAvailOut(PE));
     int Err = Deflate(Strm, GetDeflateFlush(PE));
     AvailEnd(&Avail);
@@ -620,7 +649,7 @@ static int RunDeflateOp(z_stream *Strm, PlanExecution *PE, bool Check) {
     return Err;
   }
   case DeflateOpTypeDeflateParams: {
-    Avail Avail;
+    struct Avail Avail;
     AvailInit(&Avail, Strm, GetDeflateParamsAvailIn(PE),
               GetDeflateParamsAvailOut(PE));
     int Err = DeflateParams(Strm, GetDeflateParamsLevel(PE),
@@ -636,12 +665,12 @@ static int RunDeflateOp(z_stream *Strm, PlanExecution *PE, bool Check) {
   }
 }
 
-static int RunInflateOp(z_stream *Strm, PlanExecution *PE, bool Check) {
+static int RunInflateOp(z_stream *Strm, struct PlanExecution *PE, bool Check) {
   switch (GetInflateOpType(PE)) {
   case InflateOpTypeNone:
     return 0;
   case InflateOpTypeInflate: {
-    Avail Avail;
+    struct Avail Avail;
     AvailInit(&Avail, Strm, GetInflateAvailIn(PE), GetInflateAvailOut(PE));
     int Err = Inflate(Strm, GetInflateFlush(PE));
     AvailEnd(&Avail);
@@ -656,7 +685,8 @@ static int RunInflateOp(z_stream *Strm, PlanExecution *PE, bool Check) {
   }
 }
 
-static void ExecutePlanInflate(PlanExecution *PE, const uint8_t *Compressed,
+static void ExecutePlanInflate(struct PlanExecution *PE,
+                               const uint8_t *Compressed,
                                uInt ActualCompressedSize, bool Check) {
   int InflateOpCount = GetInflateOpCount(PE);
   if (Debug) {
@@ -680,11 +710,11 @@ static void ExecutePlanInflate(PlanExecution *PE, const uint8_t *Compressed,
     assert(Err == Z_OK);
   }
   size_t TailSize = GetTailSize(PE) & 0xff;
-  std::unique_ptr<uint8_t[]> Uncompressed(
-      new uint8_t[GetPlainDataSize(PE) + TailSize]);
+  uint8_t *Uncompressed = (uint8_t *)malloc(GetPlainDataSize(PE) + TailSize);
+  assert(Uncompressed);
   Strm.next_in = Compressed;
   Strm.avail_in = ActualCompressedSize;
-  Strm.next_out = Uncompressed.get();
+  Strm.next_out = Uncompressed;
   Strm.avail_out = GetPlainDataSize(PE) + TailSize;
   for (int i = 0; i < InflateOpCount; i++, NextInflateOp(PE)) {
     Err = RunInflateOp(&Strm, PE, Check);
@@ -713,16 +743,16 @@ static void ExecutePlanInflate(PlanExecution *PE, const uint8_t *Compressed,
     assert(Err == Z_STREAM_END);
     assert(Strm.avail_in == 0);
     assert(Strm.avail_out == TailSize);
-    assert(memcmp(Uncompressed.get(), GetPlainData(PE), GetPlainDataSize(PE)) ==
-           0);
+    assert(memcmp(Uncompressed, GetPlainData(PE), GetPlainDataSize(PE)) == 0);
   }
   Err = inflateEnd(&Strm);
   if (Debug)
     fprintf(stderr, "assert(inflateEnd(&Strm) == %s);\n", ErrStr(Err));
   assert(Err == Z_OK);
+  free(Uncompressed);
 }
 
-static void ExecutePlan(PlanExecution *PE) {
+static void ExecutePlan(struct PlanExecution *PE) {
   size_t DeflateOpCount = GetDeflateOpCount(PE);
   size_t CompressedSize = GetPlainDataSize(PE) * 2 + (DeflateOpCount + 1) * 128;
   if (Debug) {
@@ -731,7 +761,8 @@ static void ExecutePlan(PlanExecution *PE) {
     fprintf(stderr, "memset(&Strm, 0, sizeof(Strm));\n");
   }
 
-  std::unique_ptr<uint8_t[]> Compressed(new uint8_t[CompressedSize]);
+  uint8_t *Compressed = (uint8_t *)malloc(CompressedSize);
+  assert(Compressed);
   z_stream Strm;
   memset(&Strm, 0, sizeof(Strm));
   int WindowBits = GetWindowBits(PE);
@@ -750,7 +781,7 @@ static void ExecutePlan(PlanExecution *PE) {
   }
   Strm.next_in = (const Bytef *)GetPlainData(PE);
   Strm.avail_in = GetPlainDataSize(PE);
-  Strm.next_out = Compressed.get();
+  Strm.next_out = Compressed;
   Strm.avail_out = CompressedSize;
   if (Debug) {
     fprintf(stderr, "unsigned char Plain[%zu] = ", GetPlainDataSize(PE));
@@ -765,7 +796,7 @@ static void ExecutePlan(PlanExecution *PE) {
   if (Debug)
     fprintf(stderr, "/* n_finish_ops == %zu; */\n", FinishOpCount);
   for (size_t i = 0; i < FinishOpCount; i++, NextFinishOp(PE)) {
-    Avail Avail;
+    struct Avail Avail;
     AvailInit(&Avail, &Strm, Strm.avail_in, GetFinishAvailOut(PE));
     Err = Deflate(&Strm, Z_FINISH);
     AvailEnd(&Avail);
@@ -787,7 +818,7 @@ static void ExecutePlan(PlanExecution *PE) {
     fprintf(stderr, "assert(deflateEnd(&Strm) == %s);\n", ErrStr(Err));
   assert(Err == Z_OK);
 
-  ExecutePlanInflate(PE, Compressed.get(), ActualCompressedSize, true);
+  ExecutePlanInflate(PE, Compressed, ActualCompressedSize, true);
 
   size_t BitFlipCount = GetBitFlipCount(PE);
   if (Debug)
@@ -800,20 +831,21 @@ static void ExecutePlan(PlanExecution *PE) {
     if (Debug)
       fprintf(stderr, "Compressed[%d] ^= 0x%02x;\n", byte_index, mask);
   }
-  ExecutePlanInflate(PE, Compressed.get(), ActualCompressedSize, false);
+  ExecutePlanInflate(PE, Compressed, ActualCompressedSize, false);
+  free(Compressed);
 }
 
 /* Entry points. */
 
 #ifdef USE_LIBPROTOBUF_MUTATOR
 DEFINE_PROTO_FUZZER(const PbPlan &Plan) {
-  PlanExecution PE;
+  struct PlanExecution PE;
   PlanExecutionInit(&PE, &Plan);
   ExecutePlan(&PE);
 }
 #else
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
-  PlanExecution PE;
+EXTERN_C int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
+  struct PlanExecution PE;
   PlanExecutionInit(&PE, Data, Size);
   ExecutePlan(&PE);
   return 0;
