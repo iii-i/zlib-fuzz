@@ -306,34 +306,6 @@ static int VisitMutableOp(InflateOp &Op, const V &Visitor) {
   }
 }
 
-template <typename OpsT>
-static void NormalizeOps(OpsT *Ops, uInt TotalIn, uInt TotalOut) {
-  uInt InDivisor = 0;
-  uInt OutDivisor = 0;
-  for (typename OpsT::value_type &Op : *Ops) {
-    VisitOp(Op, [&InDivisor](auto &Op) {
-      InDivisor += Op.avail_in();
-      return 0;
-    });
-    VisitOp(Op, [&OutDivisor](auto &Op) {
-      OutDivisor += Op.avail_out();
-      return 0;
-    });
-  }
-  if (InDivisor != 0)
-    for (typename OpsT::value_type &Op : *Ops)
-      VisitMutableOp(Op, [TotalIn, InDivisor](auto *Op) {
-        Op->set_avail_in((Op->avail_in() * TotalIn) / InDivisor);
-        return 0;
-      });
-  if (OutDivisor != 0)
-    for (typename OpsT::value_type &Op : *Ops)
-      VisitMutableOp(Op, [TotalOut, OutDivisor](auto *Op) {
-        Op->set_avail_out((Op->avail_out() * TotalOut) / OutDivisor);
-        return 0;
-      });
-}
-
 #ifndef USE_LIBPROTOBUF_MUTATOR
 static Level ChooseLevel(uint8_t Choice) {
   if (Choice < 128)
@@ -570,7 +542,6 @@ static void RunInflate(const Plan &Plan, const uint8_t *Compressed,
 static void RunPlan(Plan &Plan) {
   size_t CompressedSize =
       Plan.data().size() * 2 + (Plan.deflate_ops_size() + 1) * 128;
-  NormalizeOps(Plan.mutable_deflate_ops(), Plan.data().size(), CompressedSize);
   if (Debug) {
     fprintf(stderr, "z_stream Strm;\n");
     fprintf(stderr, "/* n_deflate_ops == %i; */\n", Plan.deflate_ops_size());
@@ -645,9 +616,6 @@ static void RunPlan(Plan &Plan) {
   if (Debug)
     fprintf(stderr, "assert(deflateEnd(&Strm) == %s);\n", ErrStr(Err));
   assert(Err == Z_OK);
-
-  NormalizeOps(Plan.mutable_inflate_ops(), ActualCompressedSize,
-               Plan.data().size());
 
   RunInflate(Plan, Compressed.get(), ActualCompressedSize, true);
 
