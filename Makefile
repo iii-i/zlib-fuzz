@@ -168,6 +168,10 @@ $(OUTPUT)zlib-ng/build-symcc/libz.a: \
 		$(foreach file,$(shell git -C zlib-ng ls-files),zlib-ng/$(file))
 	cd $(OUTPUT)zlib-ng/build-symcc && $(MAKE)
 
+$(OUTPUT)symcc/build/bin/symcc_fuzzing_helper: \
+		$(foreach file,$(shell git -C symcc/util/symcc_fuzzing_helper ls-files),symcc/util/symcc_fuzzing_helper/$(file))
+	cargo install --root $(OUTPUT)symcc/build --path symcc/util/symcc_fuzzing_helper
+
 .PHONY: fmt
 fmt:
 	clang-format -i -style=llvm fuzz_target.cpp symcc_driver.c
