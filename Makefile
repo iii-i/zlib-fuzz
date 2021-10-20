@@ -51,7 +51,7 @@ afl: $(OUTPUT)fuzz_afl $(AFL_FUZZ)
 FUZZ_AFL_OBJS=$(OUTPUT)fuzz_target_afl.o $(OUTPUT)afl_driver.o $(LIBZ_A_AFL)
 
 $(OUTPUT)fuzz_afl: $(FUZZ_AFL_OBJS) $(AFLCXX)
-	$(AFLCXX) $(LDFLAGS) -o $@ $(FUZZ_AFL_OBJS)
+	AFL_USE_ASAN=1 $(AFLCXX) $(LDFLAGS) -o $@ $(FUZZ_AFL_OBJS)
 
 $(LIBZ_A): $(foreach file,$(shell git -C $(ZLIB) ls-files),$(ZLIB)/$(file))
 	cd $(ZLIB) && $(MAKE) libz.a
@@ -69,7 +69,7 @@ $(OUTPUT)fuzz_target_libprotobuf_mutator.o: fuzz_target.cpp $(OUTPUT)fuzz_target
 	$(CXX) $(CXXFLAGS) -fsanitize=address,fuzzer -DUSE_LIBPROTOBUF_MUTATOR -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
 
 $(OUTPUT)fuzz_target_afl.o: fuzz_target.cpp $(AFLCC) | fmt
-	$(AFLCC) $(CFLAGS) -x c -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
+	AFL_USE_ASAN=1 $(AFLCC) $(CFLAGS) -x c -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
 
 $(OUTPUT)fuzz_target_symcc.o: fuzz_target.cpp $(SYMCC) | fmt
 	$(SYMCC) $(CFLAGS) -x c -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
@@ -127,7 +127,7 @@ $(OUTPUT)zlib-ng/build-afl/Makefile: \
 		zlib-ng/CMakeLists.txt \
 		$(AFLCC)
 	mkdir -p $(OUTPUT)zlib-ng/build-afl && \
-		cmake \
+		AFL_USE_ASAN=1 cmake \
 			-S zlib-ng \
 			-B $(OUTPUT)zlib-ng/build-afl \
 			-DCMAKE_C_COMPILER=$(AFLCC) \
@@ -136,7 +136,7 @@ $(OUTPUT)zlib-ng/build-afl/Makefile: \
 $(OUTPUT)zlib-ng/build-afl/libz.a: \
 		$(OUTPUT)zlib-ng/build-afl/Makefile \
 		$(foreach file,$(shell git -C zlib-ng ls-files),zlib-ng/$(file))
-	cd $(OUTPUT)zlib-ng/build-afl && $(MAKE)
+	cd $(OUTPUT)zlib-ng/build-afl && AFL_USE_ASAN=1 $(MAKE)
 
 $(OUTPUT)symcc/build/Makefile: symcc/CMakeLists.txt
 	mkdir -p $(OUTPUT)symcc/build && \
