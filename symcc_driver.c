@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size);
@@ -12,6 +13,7 @@ int main(void) {
   if (BytesRead >= 0) {
     uint8_t *Copy = malloc(BytesRead);
     assert(Copy);
+    memcpy(Copy, InputBuf, BytesRead);
     LLVMFuzzerTestOneInput(Copy, BytesRead);
     free(Copy);
   }
