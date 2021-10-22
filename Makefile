@@ -172,6 +172,14 @@ $(OUTPUT)symcc/build/bin/symcc_fuzzing_helper: \
 		$(foreach file,$(shell git -C symcc/util/symcc_fuzzing_helper ls-files),symcc/util/symcc_fuzzing_helper/$(file))
 	cargo install --root $(OUTPUT)symcc/build --path symcc/util/symcc_fuzzing_helper
 
+.PHONY: symcc
+symcc: $(OUTPUT)fuzz_symcc $(OUTPUT)fuzz_afl $(OUTPUT)symcc/build/bin/symcc_fuzzing_helper $(AFL_FUZZ)
+	rm -rf out/*
+	tmux \
+		new-session "$(AFL_FUZZ) -M afl-master -i in -o out -m none -- $(OUTPUT)fuzz_afl" \; \
+		new-window "$(AFL_FUZZ) -S afl-secondary -i in -o out -m none -- $(OUTPUT)fuzz_afl" \; \
+		new-window "sleep 3 && $(OUTPUT)symcc/build/bin/symcc_fuzzing_helper -o out -a afl-secondary -n symcc -v -- $(OUTPUT)fuzz_symcc"
+
 .PHONY: fmt
 fmt:
 	clang-format -i -style=llvm fuzz_target.cpp symcc_driver.c
