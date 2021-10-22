@@ -501,6 +501,15 @@ static void PlanExecutionInit(struct PlanExecution *PE, const uint8_t *Data,
 
   PE->Data = Data;
   PE->Size = Size;
+
+  uint16_t Choice = POP(PE, uint16_t, 0);
+  PE->PlainData = (const char *)PE->Data;
+  PE->PlainDataSize = PE->Size * (Choice + 0x2000) / 0x10000;
+  if (PE->PlainDataSize > PE->Size)
+    PE->PlainDataSize = PE->Size;
+  PE->Data += PE->PlainDataSize;
+  PE->Size -= PE->PlainDataSize;
+
   PE->WindowBits = ChooseWindowBits(POP(PE, uint8_t, 0xff));
 
   PE->Dict = NULL;
@@ -517,12 +526,6 @@ static void PlanExecutionInit(struct PlanExecution *PE, const uint8_t *Data,
       PE->Size -= DictSize;
     }
   }
-
-  PE->PlainDataSize = PE->Size * POP(PE, uint8_t, 0) / 1024;
-  /* Put the uncompressed data at the end in case it's important that the
-   * fuzzing instrumentation sees that we are touching it. */
-  PE->PlainData = (const char *)PE->Data + PE->Size - PE->PlainDataSize;
-  PE->Size -= PE->PlainDataSize;
 }
 
 static const char *GetPlainData(struct PlanExecution *PE) {
