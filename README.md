@@ -2,7 +2,7 @@
 
 libFuzzer fuzz target for zlib(-ng), which focuses not on a single function
 call, but rather on sequences thereof. It can work both stand-alone and with
-libprotobuf-mutator. Requires C++17.
+libprotobuf-mutator.
 
 # Example: fuzzing zlib-ng with libFuzzer
 

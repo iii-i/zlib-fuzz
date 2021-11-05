@@ -62,7 +62,7 @@ $(LIBZ_A_AFL): $(foreach file,$(shell git -C $(ZLIB_AFL) ls-files),$(ZLIB_AFL)/$
 $(LIBZ_A_SYMCC): $(foreach file,$(shell git -C $(ZLIB_SYMCC) ls-files),$(ZLIB_SYMCC)/$(file))
 	cd $(ZLIB_SYMCC) && $(MAKE) libz.a
 
-$(OUTPUT)fuzz_target.o: fuzz_target.cpp $(OUTPUT)fuzz_target.pb.h | fmt
+$(OUTPUT)fuzz_target.o: fuzz_target.cpp | fmt
 	$(CC) $(CFLAGS) -x c -fsanitize=address,fuzzer -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
 
 $(OUTPUT)fuzz_target_libprotobuf_mutator.o: fuzz_target.cpp $(OUTPUT)fuzz_target.pb.h | fmt
