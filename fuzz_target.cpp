@@ -60,25 +60,48 @@ static int Debug;
 
 __attribute__((constructor)) static void Init() {
   const char *Env = getenv("DEBUG");
-  if (Env && !strcmp(Env, "1"))
-    Debug = 1;
+  if (Env)
+    Debug = atoi(Env);
 }
 
-static void HexDump(FILE *stream, const void *Data, size_t Size) {
+static void HexDump(FILE *Stream, const void *Data, size_t Size) {
   for (size_t i = 0; i < Size; i++)
-    fprintf(stream, "\\x%02x", ((const uint8_t *)Data)[i]);
+    fprintf(Stream, "\\x%02x", ((const uint8_t *)Data)[i]);
 }
 
-static void HexDumpStr(FILE *stream, const void *Data, size_t Size) {
+static void HexDumpCStr(FILE *Stream, const void *Data, size_t Size) {
   const size_t ChunkSize = 16;
   for (size_t i = 0; i < Size; i += ChunkSize) {
     if (i == 0)
-      fprintf(stream, "\"");
+      fprintf(Stream, "\"");
     else
-      fprintf(stream, " \"");
-    HexDump(stream, ((const uint8_t *)Data) + i,
+      fprintf(Stream, "\n    \"");
+    HexDump(Stream, ((const uint8_t *)Data) + i,
             (Size - i) < ChunkSize ? (Size - i) : ChunkSize);
-    fprintf(stream, "\"");
+    fprintf(Stream, "\"");
+  }
+}
+
+static void Dump(FILE *Stream, const char *Name, const void *Data,
+                 size_t Size) {
+  fprintf(Stream, "unsigned char %s[%zu]", Name, Size);
+  if (Debug & 3) {
+    FILE *File = fopen(Name, "wb");
+    assert(File);
+    assert(fwrite(Data, 1, Size, File) == Size);
+    assert(fclose(File) == 0);
+    fprintf(Stream, ";\n");
+    fprintf(Stream, "{\n");
+    fprintf(Stream, "    FILE *File = fopen(\"%s\", \"rb\");\n", Name);
+    fprintf(Stream, "    assert(File);\n");
+    fprintf(Stream, "    assert(fread(%s, 1, %zu, File) == %zu);\n", Name, Size,
+            Size);
+    fprintf(Stream, "    assert(fclose(File) == 0);\n");
+    fprintf(Stream, "}\n");
+  } else {
+    fprintf(Stream, " = ");
+    HexDumpCStr(Stream, Data, Size);
+    fprintf(Stream, ";\n");
   }
 }
 
@@ -168,11 +191,9 @@ static int DeflateInit2(z_stream *Strm, int Level, int Method, int WindowBits,
 
 static int DeflateSetDictionary(z_stream *Strm, const Bytef *Dict,
                                 size_t DictLen) {
-  if (Debug) {
-    fprintf(stderr, "assert(deflateSetDictionary(&Strm, ");
-    HexDumpStr(stderr, Dict, DictLen);
-    fprintf(stderr, ", %zu) == ", DictLen);
-  }
+  if (Debug)
+    fprintf(stderr,
+            "assert(deflateSetDictionary(&Strm, Dict, %zu) == ", DictLen);
   int Err = deflateSetDictionary(Strm, Dict, DictLen);
   if (Debug)
     fprintf(stderr, "%s);\n", ErrStr(Err));
@@ -206,9 +227,8 @@ static int DeflateParams(z_stream *Strm, int Level, int Strategy) {
 static int InflateSetDictionary(z_stream *Strm, const Bytef *Dict,
                                 size_t DictLen) {
   if (Debug) {
-    fprintf(stderr, "assert(inflateSetDictionary(&Strm, ");
-    HexDumpStr(stderr, Dict, DictLen);
-    fprintf(stderr, ", %zu) == ", DictLen);
+    fprintf(stderr,
+            "assert(inflateSetDictionary(&Strm, Dict, %zu) == ", DictLen);
   }
   int Err = inflateSetDictionary(Strm, Dict, DictLen);
   if (Debug)
@@ -764,6 +784,8 @@ static void ExecutePlan(struct PlanExecution *PE) {
   size_t DeflateOpCount = GetDeflateOpCount(PE);
   size_t CompressedSize = GetPlainDataSize(PE) * 2 + (DeflateOpCount + 1) * 128;
   if (Debug) {
+    Dump(stderr, "Dict", GetDict(PE), GetDictSize(PE));
+    Dump(stderr, "Plain", GetPlainData(PE), GetPlainDataSize(PE));
     fprintf(stderr, "z_stream Strm;\n");
     fprintf(stderr, "/* n_deflate_ops == %zu; */\n", DeflateOpCount);
     fprintf(stderr, "memset(&Strm, 0, sizeof(Strm));\n");
@@ -792,9 +814,7 @@ static void ExecutePlan(struct PlanExecution *PE) {
   Strm.next_out = Compressed;
   Strm.avail_out = CompressedSize;
   if (Debug) {
-    fprintf(stderr, "unsigned char Plain[%zu] = ", GetPlainDataSize(PE));
-    HexDumpStr(stderr, GetPlainData(PE), GetPlainDataSize(PE));
-    fprintf(stderr, ";\nStrm.next_in = Plain;\n");
+    fprintf(stderr, "Strm.next_in = Plain;\n");
     fprintf(stderr, "unsigned char Compressed[%zu];\n", CompressedSize);
     fprintf(stderr, "Strm.next_out = Compressed;\n");
   }
@@ -820,7 +840,7 @@ static void ExecutePlan(struct PlanExecution *PE) {
   uInt ActualCompressedSize = CompressedSize - Strm.avail_out;
   assert(ActualCompressedSize == Strm.total_out);
   if (Debug)
-    fprintf(stderr, "/* total_out == %i; */\n", ActualCompressedSize);
+    Dump(stderr, "ActualCompressed", Compressed, ActualCompressedSize);
   Err = deflateEnd(&Strm);
   if (Debug)
     fprintf(stderr, "assert(deflateEnd(&Strm) == %s);\n", ErrStr(Err));
