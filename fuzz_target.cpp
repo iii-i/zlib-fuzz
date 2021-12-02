@@ -70,6 +70,10 @@ static void HexDump(FILE *Stream, const void *Data, size_t Size) {
 }
 
 static void HexDumpCStr(FILE *Stream, const void *Data, size_t Size) {
+  if (Size == 0) {
+    fprintf(Stream, "\"\"");
+    return;
+  }
   const size_t ChunkSize = 16;
   for (size_t i = 0; i < Size; i += ChunkSize) {
     if (i == 0)
