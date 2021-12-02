@@ -773,7 +773,11 @@ static void ExecutePlanInflate(struct PlanExecution *PE,
   }
   if (Check) {
     assert(Err == Z_STREAM_END);
+    if (Debug)
+      fprintf(stderr, "assert(Strm.avail_in == %u);\n", Strm.avail_in);
     assert(Strm.avail_in == 0);
+    if (Debug)
+      fprintf(stderr, "assert(Strm.avail_out == %u);\n", Strm.avail_out);
     assert(Strm.avail_out == TailSize);
     assert(memcmp(Uncompressed, GetPlainData(PE), GetPlainDataSize(PE)) == 0);
   }
@@ -840,6 +844,8 @@ static void ExecutePlan(struct PlanExecution *PE) {
     Err = Deflate(&Strm, Z_FINISH);
     assert(Err == Z_STREAM_END);
   }
+  if (Debug)
+    fprintf(stderr, "assert(Strm.avail_in == %u);\n", Strm.avail_in);
   assert(Strm.avail_in == 0);
   uInt ActualCompressedSize = CompressedSize - Strm.avail_out;
   assert(ActualCompressedSize == Strm.total_out);
