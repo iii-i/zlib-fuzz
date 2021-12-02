@@ -85,7 +85,7 @@ static void HexDumpCStr(FILE *Stream, const void *Data, size_t Size) {
 static void Dump(FILE *Stream, const char *Name, const void *Data,
                  size_t Size) {
   fprintf(Stream, "unsigned char %s[%zu]", Name, Size);
-  if (Debug & 3) {
+  if (Debug & 2) {
     FILE *File = fopen(Name, "wb");
     assert(File);
     assert(fwrite(Data, 1, Size, File) == Size);
