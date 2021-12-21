@@ -34,9 +34,10 @@ LIBZ_A_AFL:=$(ZLIB_AFL)/libz.a
 LIBZ_A_SYMCC:=$(ZLIB_SYMCC)/libz.a
 override ZLIB_NG_CMFLAGS:=-DCMAKE_BUILD_TYPE=RelWithDebInfo -DZLIB_COMPAT=ON $(ZLIB_NG_CMFLAGS)
 SYMCC=$(ABS_OUTPUT)symcc/build/symcc
+SYMCC_FUZZING_HELPER=$(OUTPUT)symcc/build/bin/symcc_fuzzing_helper
 
 .PHONY: all
-all: $(OUTPUT)fuzz $(OUTPUT)fuzz_libprotobuf_mutator $(OUTPUT)fuzz_afl $(OUTPUT)fuzz_symcc
+all: $(OUTPUT)fuzz $(OUTPUT)fuzz_libprotobuf_mutator $(OUTPUT)fuzz_afl $(OUTPUT)fuzz_symcc $(SYMCC_FUZZING_HELPER)
 
 $(OUTPUT)fuzz: $(OUTPUT)fuzz_target.o $(LIBZ_A)
 	$(CXX) $(LDFLAGS) -fsanitize=address,fuzzer $(OUTPUT)fuzz_target.o -o $@ $(LIBZ_A)
@@ -168,17 +169,17 @@ $(OUTPUT)zlib-ng/build-symcc/libz.a: \
 		$(foreach file,$(shell git -C zlib-ng ls-files),zlib-ng/$(file))
 	cd $(OUTPUT)zlib-ng/build-symcc && $(MAKE)
 
-$(OUTPUT)symcc/build/bin/symcc_fuzzing_helper: \
+$(SYMCC_FUZZING_HELPER): \
 		$(foreach file,$(shell git -C symcc/util/symcc_fuzzing_helper ls-files),symcc/util/symcc_fuzzing_helper/$(file))
 	cargo install --root $(OUTPUT)symcc/build --path symcc/util/symcc_fuzzing_helper
 
 .PHONY: symcc
-symcc: $(OUTPUT)fuzz_symcc $(OUTPUT)fuzz_afl $(OUTPUT)symcc/build/bin/symcc_fuzzing_helper $(AFL_FUZZ)
+symcc: $(OUTPUT)fuzz_symcc $(OUTPUT)fuzz_afl $(SYMCC_FUZZING_HELPER) $(AFL_FUZZ)
 	rm -rf out/*
 	tmux \
 		new-session "$(AFL_FUZZ) -M afl-master -i in -o out -m none -- $(OUTPUT)fuzz_afl" \; \
 		new-window "$(AFL_FUZZ) -S afl-secondary -i in -o out -m none -- $(OUTPUT)fuzz_afl" \; \
-		new-window "sleep 3 && $(OUTPUT)symcc/build/bin/symcc_fuzzing_helper -o out -a afl-secondary -n symcc -v -- $(OUTPUT)fuzz_symcc"
+		new-window "sleep 3 && $(SYMCC_FUZZING_HELPER) -o out -a afl-secondary -n symcc -v -- $(OUTPUT)fuzz_symcc"
 
 .PHONY: fmt
 fmt:
