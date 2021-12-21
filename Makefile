@@ -33,6 +33,9 @@ LIBZ_A:=$(ZLIB)/libz.a
 LIBZ_A_AFL:=$(ZLIB_AFL)/libz.a
 LIBZ_A_SYMCC:=$(ZLIB_SYMCC)/libz.a
 override ZLIB_NG_CMFLAGS:=-DCMAKE_BUILD_TYPE=RelWithDebInfo -DZLIB_COMPAT=ON $(ZLIB_NG_CMFLAGS)
+ifeq ($(shell uname -m),s390x)
+override ZLIB_NG_CMFLAGS:=-DWITH_DFLTCC_INFLATE=ON -DWITH_DFLTCC_DEFLATE=ON $(ZLIB_NG_CMFLAGS)
+endif
 SYMCC=$(ABS_OUTPUT)symcc/build/symcc
 SYMCC_FUZZING_HELPER=$(OUTPUT)symcc/build/bin/symcc_fuzzing_helper
 
