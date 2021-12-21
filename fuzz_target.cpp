@@ -809,9 +809,11 @@ static void ExecutePlan(struct PlanExecution *PE) {
   int MemLevel = GetMemLevel(PE);
   if (MemLevel == MEM_LEVEL_DEFAULT)
     MemLevel = MEM_LEVEL8;
+  int Strategy = GetInitialStrategy(PE);
   int Err = DeflateInit2(&Strm, GetInitialLevel(PE), Z_DEFLATED, WindowBits,
-                         MemLevel, GetInitialStrategy(PE));
+                         MemLevel, Strategy);
   assert(Err == Z_OK);
+  int Bound = deflateBound(&Strm, GetPlainDataSize(PE));
   if (GetDictSize(PE) > 0 && WindowBits != WB_GZIP) {
     Err = DeflateSetDictionary(&Strm, (const Bytef *)GetDict(PE),
                                GetDictSize(PE));
@@ -855,6 +857,13 @@ static void ExecutePlan(struct PlanExecution *PE) {
   if (Debug)
     fprintf(stderr, "assert(deflateEnd(&Strm) == %s);\n", ErrStr(Err));
   assert(Err == Z_OK);
+  if (Strategy == Z_DEFAULT_STRATEGY && GetDictSize(PE) == 0 &&
+      DeflateOpCount == 0 && FinishOpCount == 0) {
+    if (Debug)
+      fprintf(stderr, "assert(deflateBound(&strm) >= %u);\n",
+              ActualCompressedSize);
+    assert((unsigned long)Bound >= (unsigned long)ActualCompressedSize);
+  }
 
   ExecutePlanInflate(PE, Compressed, ActualCompressedSize, true);
 
