@@ -208,8 +208,7 @@ static int DeflateInit2(z_stream *Strm, int Level, int Method, int WindowBits,
   if (Debug)
     Print(stderr, "assert(deflateInit2(&Strm, %i, %i, %i, %i, %s) == ", Level,
           Method, WindowBits, MemLevel, StrategyStr(Strategy));
-  int Err =
-      deflateInit2(Strm, MemLevel, Method, WindowBits, MemLevel, Strategy);
+  int Err = deflateInit2(Strm, Level, Method, WindowBits, MemLevel, Strategy);
   if (Debug)
     fprintf(stderr, "%s);\n", ErrStr(Err));
   return Err;
