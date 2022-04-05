@@ -57,15 +57,6 @@ FUZZ_AFL_OBJS=$(OUTPUT)fuzz_target_afl.o $(OUTPUT)afl_driver.o $(LIBZ_A_AFL)
 $(OUTPUT)fuzz_afl: $(FUZZ_AFL_OBJS) $(AFLCXX)
 	AFL_USE_ASAN=1 $(AFLCXX) $(LDFLAGS) -o $@ $(FUZZ_AFL_OBJS)
 
-$(LIBZ_A): $(foreach file,$(shell git -C $(ZLIB) ls-files),$(ZLIB)/$(file))
-	cd $(ZLIB) && $(MAKE) libz.a
-
-$(LIBZ_A_AFL): $(foreach file,$(shell git -C $(ZLIB_AFL) ls-files),$(ZLIB_AFL)/$(file))
-	cd $(ZLIB_AFL) && $(MAKE) libz.a
-
-$(LIBZ_A_SYMCC): $(foreach file,$(shell git -C $(ZLIB_SYMCC) ls-files),$(ZLIB_SYMCC)/$(file))
-	cd $(ZLIB_SYMCC) && $(MAKE) libz.a
-
 $(OUTPUT)fuzz_target.o: fuzz_target.cpp | fmt
 	$(CC) $(CFLAGS) -x c -fsanitize=address,fuzzer -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
 
