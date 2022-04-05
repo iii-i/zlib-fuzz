@@ -39,6 +39,8 @@ endif
 SYMCC=$(ABS_OUTPUT)symcc/build/symcc
 SYMCC_FUZZING_HELPER=$(OUTPUT)symcc/build/bin/symcc_fuzzing_helper
 
+ls_files = $(foreach file,$(shell git -C $(1) ls-files),$(1)/$(file))
+
 .PHONY: all
 all: $(OUTPUT)fuzz $(OUTPUT)fuzz_libprotobuf_mutator $(OUTPUT)fuzz_afl $(OUTPUT)fuzz_symcc $(SYMCC_FUZZING_HELPER)
 
@@ -110,11 +112,10 @@ $(OUTPUT)zlib-ng/build-libfuzzer/Makefile: zlib-ng/CMakeLists.txt
 
 $(OUTPUT)zlib-ng/build-libfuzzer/libz.a: \
 		$(OUTPUT)zlib-ng/build-libfuzzer/Makefile \
-		$(foreach file,$(shell git -C zlib-ng ls-files),zlib-ng/$(file))
+		$(call ls_files,zlib-ng)
 	cd $(OUTPUT)zlib-ng/build-libfuzzer && $(MAKE)
 
-$(AFLCC) $(AFLCXX) $(AFL_FUZZ): \
-		$(foreach file,$(shell git -C AFLplusplus ls-files),AFLplusplus/$(file))
+$(AFLCC) $(AFLCXX) $(AFL_FUZZ): $(call ls_files,AFLplusplus)
 	rsync --archive AFLplusplus $(OUTPUT)
 	cd $(OUTPUT)AFLplusplus && $(MAKE)
 
@@ -130,7 +131,7 @@ $(OUTPUT)zlib-ng/build-afl/Makefile: \
 
 $(OUTPUT)zlib-ng/build-afl/libz.a: \
 		$(OUTPUT)zlib-ng/build-afl/Makefile \
-		$(foreach file,$(shell git -C zlib-ng ls-files),zlib-ng/$(file))
+		$(call ls_files,zlib-ng)
 	cd $(OUTPUT)zlib-ng/build-afl && AFL_USE_ASAN=1 $(MAKE)
 
 $(OUTPUT)symcc/build/Makefile: symcc/CMakeLists.txt
@@ -143,7 +144,7 @@ $(OUTPUT)symcc/build/Makefile: symcc/CMakeLists.txt
 
 $(SYMCC): \
 		$(OUTPUT)symcc/build/Makefile \
-		$(foreach file,$(shell git -C symcc ls-files),symcc/$(file))
+		$(call ls_files,symcc)
 	cd $(OUTPUT)symcc/build && $(MAKE)
 
 $(OUTPUT)zlib-ng/build-symcc/Makefile: \
@@ -160,11 +161,10 @@ $(OUTPUT)zlib-ng/build-symcc/Makefile: \
 
 $(OUTPUT)zlib-ng/build-symcc/libz.a: \
 		$(OUTPUT)zlib-ng/build-symcc/Makefile \
-		$(foreach file,$(shell git -C zlib-ng ls-files),zlib-ng/$(file))
+		$(call ls_files,zlib-ng)
 	cd $(OUTPUT)zlib-ng/build-symcc && $(MAKE)
 
-$(SYMCC_FUZZING_HELPER): \
-		$(foreach file,$(shell git -C symcc/util/symcc_fuzzing_helper ls-files),symcc/util/symcc_fuzzing_helper/$(file))
+$(SYMCC_FUZZING_HELPER): $(call ls_files,symcc/util/symcc_fuzzing_helper)
 	cargo install --root $(OUTPUT)symcc/build --path symcc/util/symcc_fuzzing_helper
 
 .PHONY: symcc
