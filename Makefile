@@ -122,6 +122,8 @@ $(OUTPUT)zlib-ng/build-libfuzzer/libz.a: \
 $(AFLCC) $(AFLCXX) $(AFL_FUZZ): $(call ls_files,AFLplusplus)
 	rsync --archive AFLplusplus $(OUTPUT)
 	cd $(OUTPUT)AFLplusplus && $(MAKE)
+$(AFLCXX): $(AFLCC)
+$(AFL_FUZZ): $(AFLCC)
 
 $(OUTPUT)zlib-ng/build-afl/Makefile: \
 		zlib-ng/CMakeLists.txt \
