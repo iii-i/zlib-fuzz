@@ -118,7 +118,7 @@ $(OUTPUT)zlib-ng/build-libfuzzer/Makefile: zlib-ng/CMakeLists.txt
 $(OUTPUT)zlib-ng/build-libfuzzer/libz.a: \
 		$(OUTPUT)zlib-ng/build-libfuzzer/Makefile \
 		$(call ls_files,zlib-ng)
-	cd $(OUTPUT)zlib-ng/build-libfuzzer && $(MAKE)
+	cd $(OUTPUT)zlib-ng/build-libfuzzer && $(MAKE) zlibstatic
 
 $(AFLCC) $(AFLCXX) $(AFL_FUZZ): $(call ls_files,AFLplusplus)
 	rsync --archive AFLplusplus $(OUTPUT)
@@ -139,7 +139,7 @@ $(OUTPUT)zlib-ng/build-afl/Makefile: \
 $(OUTPUT)zlib-ng/build-afl/libz.a: \
 		$(OUTPUT)zlib-ng/build-afl/Makefile \
 		$(call ls_files,zlib-ng)
-	cd $(OUTPUT)zlib-ng/build-afl && AFL_USE_ASAN=1 $(MAKE)
+	cd $(OUTPUT)zlib-ng/build-afl && AFL_USE_ASAN=1 $(MAKE) zlibstatic
 
 $(OUTPUT)symcc/build/Makefile: symcc/CMakeLists.txt
 	mkdir -p $(OUTPUT)symcc/build && \
@@ -168,7 +168,7 @@ $(OUTPUT)zlib-ng/build-symcc/Makefile: \
 $(OUTPUT)zlib-ng/build-symcc/libz.a: \
 		$(OUTPUT)zlib-ng/build-symcc/Makefile \
 		$(call ls_files,zlib-ng)
-	cd $(OUTPUT)zlib-ng/build-symcc && $(MAKE)
+	cd $(OUTPUT)zlib-ng/build-symcc && $(MAKE) zlibstatic
 
 $(SYMCC_FUZZING_HELPER): $(call ls_files,symcc/util/symcc_fuzzing_helper)
 	cargo install --root $(OUTPUT)symcc/build --path symcc/util/symcc_fuzzing_helper
