@@ -8,12 +8,32 @@ libprotobuf-mutator.
 
 ```
 $ git submodule update --init --recursive
-$ make O=build ZLIB=build/zlib-ng/build-libfuzzer build/fuzz -j"$(nproc)"
+$ make O=build build/fuzz -j"$(nproc)"
 $ build/fuzz
 ```
+
+# Example: fuzzing zlib-ng with libprotobuf-mutator
+
+```
+$ git submodule update --init --recursive
+$ make O=build build/fuzz_libprotobuf_mutator -j"$(nproc)"
+$ build/fuzz_libprotobuf_mutator
+```
+
 # Example: fuzzing zlib-ng with AFL
 
 ```
 $ git submodule update --init --recursive
-$ make O=build ZLIB_AFL=build/zlib-ng/build-afl afl -j"$(nproc)"
+$ AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 AFL_SKIP_CPUFREQ=1 \
+  PATH=/usr/lib/llvm-11/bin:$PATH \
+  make O=build afl -j"$(nproc)"
+```
+
+# Example: fuzzing zlib-ng with SymCC
+
+```
+$ git submodule update --init --recursive
+$ AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 AFL_SKIP_CPUFREQ=1 \
+  PATH=/usr/lib/llvm-11/bin:$PATH \
+  make O=build symcc -j"$(nproc)"
 ```
