@@ -174,9 +174,9 @@ $(SYMCC_FUZZING_HELPER): $(call ls_files,symcc/util/symcc_fuzzing_helper)
 symcc: $(OUTPUT)fuzz_symcc $(OUTPUT)fuzz_afl $(SYMCC_FUZZING_HELPER) $(AFL_FUZZ)
 	rm -rf out/*
 	tmux \
-		new-session "$(AFL_FUZZ) -M afl-master -i in -o out -m none -- $(OUTPUT)fuzz_afl" \; \
-		new-window "$(AFL_FUZZ) -S afl-secondary -i in -o out -m none -- $(OUTPUT)fuzz_afl" \; \
-		new-window "sleep 3 && $(SYMCC_FUZZING_HELPER) -o out -a afl-secondary -n symcc -v -- $(OUTPUT)fuzz_symcc"
+		new-session "$(AFL_FUZZ) -M afl-master -i in -o out -m none -- $(OUTPUT)fuzz_afl; exec $$SHELL" \; \
+		new-window "$(AFL_FUZZ) -S afl-secondary -i in -o out -m none -- $(OUTPUT)fuzz_afl; exec $$SHELL" \; \
+		new-window "sleep 3 && $(SYMCC_FUZZING_HELPER) -o out -a afl-secondary -n symcc -v -- $(OUTPUT)fuzz_symcc; exec $$SHELL"
 
 .PHONY: fmt
 fmt:
