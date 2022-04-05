@@ -112,6 +112,7 @@ $(OUTPUT)zlib-ng/build-libfuzzer/Makefile: zlib-ng/CMakeLists.txt
 			-B $(OUTPUT)zlib-ng/build-libfuzzer \
 			-DCMAKE_C_COMPILER=$(CC) \
 			-DCMAKE_C_FLAGS=-fsanitize=address,fuzzer-no-link \
+			-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address \
 			$(ZLIB_NG_CMFLAGS)
 
 $(OUTPUT)zlib-ng/build-libfuzzer/libz.a: \
