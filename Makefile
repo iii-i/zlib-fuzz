@@ -35,10 +35,11 @@ LIBZ_A_SYMCC:=$(ZLIB_SYMCC)/libz.a
 override ZLIB_NG_CMFLAGS:=-DCMAKE_BUILD_TYPE=RelWithDebInfo -DZLIB_COMPAT=ON $(ZLIB_NG_CMFLAGS)
 ifeq ($(shell uname -m),s390x)
 override ZLIB_NG_CMFLAGS:=-DWITH_DFLTCC_INFLATE=ON -DWITH_DFLTCC_DEFLATE=ON $(ZLIB_NG_CMFLAGS)
-override ZLIB_NG_SYMCC_CMFLAGS:= $(ZLIB_NG_SYMCC_CMFLAGS) -DWITH_CRC32_VX=OFF
+override ZLIB_NG_SYMCC_CMFLAGS:=-DWITH_CRC32_VX=OFF $(ZLIB_NG_SYMCC_CMFLAGS)
+override ZLIB_CONFIGURE_FLAGS:=--dfltcc $(ZLIB_CONFIGURE_FLAGS)
 endif
 ifeq ($(shell uname -m),x86_64)
-override ZLIB_NG_SYMCC_CMFLAGS:= $(ZLIB_NG_SYMCC_CMFLAGS) -DWITH_SSE2=OFF
+override ZLIB_NG_SYMCC_CMFLAGS:=-DWITH_SSE2=OFF $(ZLIB_NG_SYMCC_CMFLAGS)
 endif
 SYMCC=$(ABS_OUTPUT)symcc/build/symcc
 SYMCC_FUZZING_HELPER=$(OUTPUT)symcc/build/bin/symcc_fuzzing_helper
@@ -121,7 +122,7 @@ $(OUTPUT)zlib-ng/build-libfuzzer/libz.a: \
 	cd $(OUTPUT)zlib-ng/build-libfuzzer && $(MAKE) zlibstatic
 
 $(AFLCC) $(AFLCXX) $(AFL_FUZZ): $(call ls_files,AFLplusplus)
-	rsync --archive AFLplusplus $(OUTPUT)
+	rsync --archive --exclude=/.git/ AFLplusplus $(OUTPUT)
 	cd $(OUTPUT)AFLplusplus && $(MAKE)
 $(AFLCXX): $(AFLCC)
 $(AFL_FUZZ): $(AFLCC)
@@ -180,6 +181,18 @@ symcc: $(OUTPUT)fuzz_symcc $(OUTPUT)fuzz_afl $(SYMCC_FUZZING_HELPER) $(AFL_FUZZ)
 		new-session "$(AFL_FUZZ) -M afl-master -i in -o out -m none -- $(OUTPUT)fuzz_afl; exec $$SHELL" \; \
 		new-window "$(AFL_FUZZ) -S afl-secondary -i in -o out -m none -- $(OUTPUT)fuzz_afl; exec $$SHELL" \; \
 		new-window "sleep 3 && $(SYMCC_FUZZING_HELPER) -o out -a afl-secondary -n symcc -v -- $(OUTPUT)fuzz_symcc; exec $$SHELL"
+
+$(OUTPUT)zlib/build-libfuzzer/libz.a: $(call ls_files,zlib)
+	mkdir -p $(OUTPUT)zlib/build-libfuzzer
+	rsync \
+		--archive \
+		--exclude='/build-*/' \
+		--exclude=/.git/ \
+		zlib/ $(OUTPUT)zlib/build-libfuzzer
+	cd $(OUTPUT)zlib/build-libfuzzer && \
+		CC=$(CC) CFLAGS=-fsanitize=address,fuzzer-no-link \
+			./configure $(ZLIB_CONFIGURE_FLAGS) && \
+		$(MAKE) libz.a
 
 .PHONY: fmt
 fmt:

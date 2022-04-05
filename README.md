@@ -12,6 +12,14 @@ $ make O=build build/fuzz -j"$(nproc)"
 $ build/fuzz
 ```
 
+# Example: fuzzing zlib with libFuzzer
+
+```
+$ git submodule update --init --recursive
+$ make O=build ZLIB=build/zlib/build-libfuzzer build/fuzz -j"$(nproc)"
+$ build/fuzz
+```
+
 # Example: fuzzing zlib-ng with libprotobuf-mutator
 
 ```
