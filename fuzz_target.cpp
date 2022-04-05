@@ -841,6 +841,9 @@ static void ExecutePlan(struct PlanExecution *PE) {
                          MemLevel, Strategy);
   assert(Err == Z_OK);
   int Bound = deflateBound(&Strm, GetPlainDataSize(PE));
+  if (Debug)
+    Print(stderr, "int Bound = deflateBound(&Strm, %zu);\n",
+          GetPlainDataSize(PE));
   if (GetDictSize(PE) > 0 && WindowBits != WB_GZIP) {
     Err = DeflateSetDictionary(&Strm, (const Bytef *)GetDict(PE),
                                GetDictSize(PE));
@@ -887,8 +890,7 @@ static void ExecutePlan(struct PlanExecution *PE) {
   if (Strategy == Z_DEFAULT_STRATEGY && GetDictSize(PE) == 0 &&
       DeflateOpCount == 0 && FinishOpCount == 0) {
     if (Debug)
-      Print(stderr, "assert(deflateBound(&strm) >= %u);\n",
-            ActualCompressedSize);
+      Print(stderr, "assert(Bound >= %u);\n", ActualCompressedSize);
     assert((unsigned long)Bound >= (unsigned long)ActualCompressedSize);
   }
 
