@@ -35,6 +35,10 @@ LIBZ_A_SYMCC:=$(ZLIB_SYMCC)/libz.a
 override ZLIB_NG_CMFLAGS:=-DCMAKE_BUILD_TYPE=RelWithDebInfo -DZLIB_COMPAT=ON $(ZLIB_NG_CMFLAGS)
 ifeq ($(shell uname -m),s390x)
 override ZLIB_NG_CMFLAGS:=-DWITH_DFLTCC_INFLATE=ON -DWITH_DFLTCC_DEFLATE=ON $(ZLIB_NG_CMFLAGS)
+override ZLIB_NG_SYMCC_CMFLAGS:= $(ZLIB_NG_SYMCC_CMFLAGS) -DWITH_CRC32_VX=OFF
+endif
+ifeq ($(shell uname -m),x86_64)
+override ZLIB_NG_SYMCC_CMFLAGS:= $(ZLIB_NG_SYMCC_CMFLAGS) -DWITH_SSE2=OFF
 endif
 SYMCC=$(ABS_OUTPUT)symcc/build/symcc
 SYMCC_FUZZING_HELPER=$(OUTPUT)symcc/build/bin/symcc_fuzzing_helper
@@ -155,9 +159,8 @@ $(OUTPUT)zlib-ng/build-symcc/Makefile: \
 			-S zlib-ng \
 			-B $(OUTPUT)zlib-ng/build-symcc \
 			-DCMAKE_C_COMPILER=$(SYMCC) \
-			-DWITH_SSE2=OFF \
-			-DWITH_CRC32_VX=OFF \
-			$(ZLIB_NG_CMFLAGS)
+			$(ZLIB_NG_CMFLAGS) \
+			$(ZLIB_NG_SYMCC_CMFLAGS)
 
 $(OUTPUT)zlib-ng/build-symcc/libz.a: \
 		$(OUTPUT)zlib-ng/build-symcc/Makefile \
