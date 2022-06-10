@@ -67,22 +67,30 @@ message PbDeflateParams {
   PbStrategy strategy = 4;
 }
 
+message PbDeflateCopy {
+}
+
 message PbInflate {
   int32 avail_in = 1;
   int32 avail_out = 2;
   PbInflateFlush flush = 3;
 }
 
+message PbInflateCopy {
+}
+
 message PbDeflateOp {
   oneof op {
     PbDeflate deflate = 1;
     PbDeflateParams deflate_params = 2;
+    PbDeflateCopy deflate_copy = 3;
   }
 }
 
 message PbInflateOp {
   oneof op {
     PbInflate inflate = 1;
+    PbInflateCopy inflate_copy = 2;
   }
 }
 
