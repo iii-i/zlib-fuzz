@@ -13,3 +13,6 @@
 [submodule "zlib"]
 	path = zlib
 	url = https://github.com/iii-i/zlib.git
+[submodule "squash-benchmark"]
+	path = squash-benchmark
+	url = https://github.com/quixdb/squash-benchmark.git

@@ -50,7 +50,7 @@ ls_files = $(foreach file,$(shell git -C $(1) ls-files),$(1)/$(file))
 all: $(OUTPUT)fuzz $(OUTPUT)fuzz_libprotobuf_mutator $(OUTPUT)fuzz_afl $(OUTPUT)fuzz_symcc $(SYMCC_FUZZING_HELPER)
 
 .PHONY: fuzz
-fuzz: $(OUTPUT)fuzz_target
+fuzz: $(OUTPUT)fuzz_target $(foreach file,$(shell git -C squash-benchmark ls-files *.xz),in/$(basename $(file)))
 	$(OUTPUT)fuzz_target in
 
 $(OUTPUT)fuzz_target: $(OUTPUT)fuzz_target.o $(LIBZ_A)
@@ -197,6 +197,9 @@ $(OUTPUT)zlib/build-libfuzzer/libz.a: $(call ls_files,zlib)
 		CC=$(CC) CFLAGS=-fsanitize=address,fuzzer-no-link \
 			./configure $(ZLIB_CONFIGURE_FLAGS) && \
 		$(MAKE) libz.a
+
+in/%: squash-benchmark/%.xz
+	xz -d <$< >$@
 
 .PHONY: fmt
 fmt:

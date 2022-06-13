@@ -8,6 +8,7 @@ fuzz_target
 fuzz_target.pb.cc
 fuzz_target.pb.h
 .idea/
+in/
 minimized-*
 *.o
 *.o.tmp
