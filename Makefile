@@ -49,7 +49,11 @@ ls_files = $(foreach file,$(shell git -C $(1) ls-files),$(1)/$(file))
 .PHONY: all
 all: $(OUTPUT)fuzz $(OUTPUT)fuzz_libprotobuf_mutator $(OUTPUT)fuzz_afl $(OUTPUT)fuzz_symcc $(SYMCC_FUZZING_HELPER)
 
-$(OUTPUT)fuzz: $(OUTPUT)fuzz_target.o $(LIBZ_A)
+.PHONY: fuzz
+fuzz: $(OUTPUT)fuzz_target
+	$(OUTPUT)fuzz_target in
+
+$(OUTPUT)fuzz_target: $(OUTPUT)fuzz_target.o $(LIBZ_A)
 	$(CXX) $(LDFLAGS) -fsanitize=address,fuzzer $(OUTPUT)fuzz_target.o -o $@ $(LIBZ_A)
 
 $(OUTPUT)fuzz_libprotobuf_mutator: $(OUTPUT)fuzz_target_libprotobuf_mutator.o $(OUTPUT)fuzz_target.pb.o $(LIBZ_A)

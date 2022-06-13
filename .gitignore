@@ -1,10 +1,10 @@
 a.out_afl
 build/
 crash-*
-fuzz
 fuzz_afl
 fuzz_libprotobuf_mutator
 fuzz_symcc
+fuzz_target
 fuzz_target.pb.cc
 fuzz_target.pb.h
 .idea/
