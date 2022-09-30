@@ -1,6 +1,6 @@
 [submodule "libprotobuf-mutator"]
 	path = libprotobuf-mutator
-	url = https://github.com/iii-i/libprotobuf-mutator.git
+	url = https://github.com/google/libprotobuf-mutator.git
 [submodule "zlib-ng"]
 	path = zlib-ng
 	url = https://github.com/zlib-ng/zlib-ng.git
