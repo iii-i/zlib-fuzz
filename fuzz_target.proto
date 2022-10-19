@@ -34,13 +34,6 @@ enum PbStrategy {
   PB_Z_FIXED = 4;
 }
 
-enum PbWindowBits {
-  PB_WB_DEFAULT = 0;
-  PB_WB_RAW = -15;
-  PB_WB_ZLIB = 15;
-  PB_WB_GZIP = 31;
-}
-
 enum PbMemLevel {
   PB_MEM_LEVEL_DEFAULT = 0;
   PB_MEM_LEVEL1 = 1;
@@ -97,7 +90,7 @@ message PbInflateOp {
 message PbPlan {
   bytes data = 1;
   PbLevel level = 2;
-  PbWindowBits window_bits = 3;
+  int32 window_bits = 3;
   PbMemLevel mem_level = 4;
   PbStrategy strategy = 5;
   bytes dict = 6;

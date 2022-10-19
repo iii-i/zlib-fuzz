@@ -23,11 +23,6 @@
 
 /* Constants. */
 
-#define WB_DEFAULT 0
-#define WB_RAW -15
-#define WB_ZLIB 15
-#define WB_GZIP 31
-
 #define MEM_LEVEL_DEFAULT 0
 #define MEM_LEVEL8 8
 
@@ -47,13 +42,30 @@ static_assert(PB_Z_FILTERED == Z_FILTERED);
 static_assert(PB_Z_HUFFMAN_ONLY == Z_HUFFMAN_ONLY);
 static_assert(PB_Z_RLE == Z_RLE);
 static_assert(PB_Z_FIXED == Z_FIXED);
-static_assert(PB_WB_DEFAULT == WB_DEFAULT);
-static_assert(PB_WB_RAW == WB_RAW);
-static_assert(PB_WB_ZLIB == WB_ZLIB);
-static_assert(PB_WB_GZIP == WB_GZIP);
 static_assert(PB_MEM_LEVEL_DEFAULT == MEM_LEVEL_DEFAULT);
 static_assert(PB_MEM_LEVEL8 == MEM_LEVEL8);
 #endif
+
+/* Window size utilities. */
+
+static bool IsWbRaw(int WindowBits) {
+  return WindowBits >= -15 && WindowBits <= -9;
+}
+
+static bool IsWbZlib(int WindowBits) {
+  return WindowBits >= 9 && WindowBits <= 15;
+}
+
+static bool IsWbGzip(int WindowBits) {
+  return WindowBits >= (16 + 9) && WindowBits <= (16 + 15);
+}
+
+static int FixupWindowBits(int WindowBits) {
+  if (IsWbRaw(WindowBits) || IsWbZlib(WindowBits) || IsWbGzip(WindowBits))
+    return WindowBits;
+  else
+    return 15;
+}
 
 /* Dumping. */
 
@@ -544,15 +556,6 @@ static int ChooseLevel(uint8_t Choice) {
     return Z_BEST_SPEED;
 }
 
-static int ChooseWindowBits(uint8_t Choice) {
-  if (Choice < 85)
-    return WB_RAW;
-  else if (Choice < 170)
-    return WB_ZLIB;
-  else
-    return WB_GZIP;
-}
-
 static int ChooseMemLevel(uint8_t Choice) { return (Choice % 9) + 1; }
 
 static int ChooseStrategy(uint8_t Choice) {
@@ -606,11 +609,11 @@ static void PlanExecutionInit(struct PlanExecution *PE, const uint8_t *Data,
   PE->Data += PE->PlainDataSize;
   PE->Size -= PE->PlainDataSize;
 
-  PE->WindowBits = ChooseWindowBits(POP(PE, uint8_t, 0xff));
+  PE->WindowBits = FixupWindowBits(POP(PE, int8_t, 0));
 
   PE->Dict = NULL;
   PE->DictSize = 0;
-  if (PE->WindowBits != WB_GZIP) {
+  if (!IsWbGzip(PE->WindowBits)) {
     size_t DictSize = POP(PE, uint8_t, 0);
     if (DictSize > 0 && DictSize < 128) {
       size_t MaxDictSize = PE->Size / 4;
@@ -817,15 +820,13 @@ static void ExecutePlanInflate(struct PlanExecution *PE,
     Print(stderr, "Strm[%zu].next_out = Plain;\n", Idx);
   }
   memset(&Strm, 0, sizeof(Strm));
-  int WindowBits = GetWindowBits(PE);
-  if (WindowBits == WB_DEFAULT)
-    WindowBits = WB_ZLIB;
+  int WindowBits = FixupWindowBits(GetWindowBits(PE));
   int Err = inflateInit2(&Strm[Idx], WindowBits);
   if (Debug)
     Print(stderr, "assert(inflateInit2(&Strm[%zu], %i) == %s);\n", Idx,
           WindowBits, ErrStr(Err));
   assert(Err == Z_OK);
-  if (GetDictSize(PE) > 0 && WindowBits == WB_RAW) {
+  if (GetDictSize(PE) > 0 && IsWbRaw(WindowBits)) {
     Err = InflateSetDictionary(Strm, &Idx, (const Bytef *)GetDict(PE),
                                GetDictSize(PE));
     assert(Err == Z_OK);
@@ -841,7 +842,7 @@ static void ExecutePlanInflate(struct PlanExecution *PE,
     Err = RunInflateOp(Strm, &Idx, PE, Check);
     if (Err == Z_NEED_DICT) {
       if (Check)
-        assert(GetDictSize(PE) > 0 && WindowBits == WB_ZLIB);
+        assert(GetDictSize(PE) > 0 && IsWbZlib(WindowBits));
       Err = InflateSetDictionary(Strm, &Idx, (const Bytef *)GetDict(PE),
                                  GetDictSize(PE));
       if (Check)
@@ -852,7 +853,7 @@ static void ExecutePlanInflate(struct PlanExecution *PE,
     Err = Inflate(Strm, &Idx, Z_NO_FLUSH);
     if (Err == Z_NEED_DICT) {
       if (Check)
-        assert(GetDictSize(PE) > 0 && WindowBits == WB_ZLIB);
+        assert(GetDictSize(PE) > 0 && IsWbZlib(WindowBits));
       Err = InflateSetDictionary(Strm, &Idx, (const Bytef *)GetDict(PE),
                                  GetDictSize(PE));
       if (Check)
@@ -903,9 +904,7 @@ static void ExecutePlan(struct PlanExecution *PE) {
   z_stream Strm[2];
   size_t Idx = 0;
   memset(&Strm, 0, sizeof(Strm));
-  int WindowBits = GetWindowBits(PE);
-  if (WindowBits == WB_DEFAULT)
-    WindowBits = WB_ZLIB;
+  int WindowBits = FixupWindowBits(GetWindowBits(PE));
   int MemLevel = GetMemLevel(PE);
   if (MemLevel == MEM_LEVEL_DEFAULT)
     MemLevel = MEM_LEVEL8;
@@ -917,7 +916,7 @@ static void ExecutePlan(struct PlanExecution *PE) {
   if (Debug)
     Print(stderr, "int Bound = deflateBound(&Strm[%zu], %zu);\n", Idx,
           GetPlainDataSize(PE));
-  if (GetDictSize(PE) > 0 && WindowBits != WB_GZIP) {
+  if (GetDictSize(PE) > 0 && !IsWbGzip(WindowBits)) {
     Err = DeflateSetDictionary(Strm, &Idx, (const Bytef *)GetDict(PE),
                                GetDictSize(PE));
     assert(Err == Z_OK);
