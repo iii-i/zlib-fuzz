@@ -31,7 +31,7 @@ $ build/fuzz_libprotobuf_mutator
 ```
 $ git submodule update --init --recursive
 $ AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 AFL_SKIP_CPUFREQ=1 \
-  PATH=/usr/lib/llvm-11/bin:$PATH \
+  PATH=/usr/lib/llvm-13/bin:$PATH \
   make O=build afl -j"$(nproc)"
 ```
 
