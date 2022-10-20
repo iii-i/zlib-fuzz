@@ -370,7 +370,9 @@ enum InflateOpType {
 #ifdef USE_LIBPROTOBUF_MUTATOR
 struct PlanExecution {
   const PbPlan *Plan;
+  size_t DeflateDictPieceIdx;
   size_t DeflateOpIdx;
+  size_t InflateDictPieceIdx;
   size_t InflateOpIdx;
   size_t FinishOpIdx;
   size_t BitFlipIdx;
@@ -378,7 +380,9 @@ struct PlanExecution {
 
 static void PlanExecutionInit(struct PlanExecution *PE, const PbPlan *Plan) {
   PE->Plan = Plan;
+  PE->DeflateDictPieceIdx = 0;
   PE->DeflateOpIdx = 0;
+  PE->InflateDictPieceIdx = 0;
   PE->InflateOpIdx = 0;
   PE->FinishOpIdx = 0;
   PE->BitFlipIdx = 0;
@@ -414,6 +418,14 @@ static const char *GetDict(struct PlanExecution *PE) {
 
 static size_t GetDictSize(struct PlanExecution *PE) {
   return PE->Plan->dict().size();
+}
+
+static size_t GetDeflateDictPiecesCount(struct PlanExecution *PE) {
+  return PE->Plan->deflate_dict_pieces_size();
+}
+
+static uInt GetDeflateDictPiece(struct PlanExecution *PE) {
+  return PE->Plan->deflate_dict_pieces(PE->DeflateDictPieceIdx++);
 }
 
 static size_t GetDeflateOpCount(struct PlanExecution *PE) {
@@ -475,6 +487,18 @@ static void NextFinishOp(struct PlanExecution *PE) { PE->FinishOpIdx++; }
 
 static uInt GetFinishAvailOut(struct PlanExecution *PE) {
   return PE->Plan->finish_avail_outs(PE->FinishOpIdx);
+}
+
+static void ResetInflateDictPieces(struct PlanExecution *PE) {
+  PE->InflateDictPieceIdx = 0;
+}
+
+static size_t GetInflateDictPiecesCount(struct PlanExecution *PE) {
+  return PE->Plan->inflate_dict_pieces_size();
+}
+
+static uInt GetInflateDictPiece(struct PlanExecution *PE) {
+  return PE->Plan->inflate_dict_pieces(PE->InflateDictPieceIdx++);
 }
 
 static void ResetInflateOps(struct PlanExecution *PE) { PE->InflateOpIdx = 0; }
@@ -653,6 +677,14 @@ static const char *GetDict(struct PlanExecution *PE) { return PE->Dict; }
 
 static size_t GetDictSize(struct PlanExecution *PE) { return PE->DictSize; }
 
+static size_t GetDeflateDictPiecesCount(struct PlanExecution *PE) {
+  return POP(PE, uint8_t, 0);
+}
+
+static uInt GetDeflateDictPiece(struct PlanExecution *PE) {
+  return POP(PE, uint16_t, 0);
+}
+
 static size_t GetDeflateOpCount(struct PlanExecution *PE) {
   return POP(PE, uint8_t, 0);
 }
@@ -699,6 +731,16 @@ static void NextFinishOp(struct PlanExecution *PE) { (void)PE; }
 
 static uInt GetFinishAvailOut(struct PlanExecution *PE) {
   return POP(PE, uint8_t, 0);
+}
+
+static void ResetInflateDictPieces(struct PlanExecution *PE) { (void)PE; }
+
+static size_t GetInflateDictPiecesCount(struct PlanExecution *PE) {
+  return POP(PE, uint8_t, 0);
+}
+
+static uInt GetInflateDictPiece(struct PlanExecution *PE) {
+  return POP(PE, uint16_t, 0);
 }
 
 static void ResetInflateOps(struct PlanExecution *PE) { (void)PE; }
@@ -810,6 +852,7 @@ static int RunInflateOp(z_stream *Strm, size_t *Idx, struct PlanExecution *PE,
 static void ExecutePlanInflate(struct PlanExecution *PE,
                                const uint8_t *Compressed,
                                uInt ActualCompressedSize, bool Check) {
+  ResetInflateDictPieces(PE);
   ResetInflateOps(PE);
   int InflateOpCount = GetInflateOpCount(PE);
   z_stream Strm[2];
@@ -827,9 +870,24 @@ static void ExecutePlanInflate(struct PlanExecution *PE,
           WindowBits, ErrStr(Err));
   assert(Err == Z_OK);
   if (GetDictSize(PE) > 0 && IsWbRaw(WindowBits)) {
-    Err = InflateSetDictionary(Strm, &Idx, (const Bytef *)GetDict(PE),
-                               GetDictSize(PE));
-    assert(Err == Z_OK);
+    size_t PiecesCount = GetInflateDictPiecesCount(PE);
+    size_t Offset = 0;
+    for (size_t i = 0; i <= PiecesCount && Offset < GetDictSize(PE); i++) {
+      uInt Piece;
+      if (i < PiecesCount) {
+        Piece = GetInflateDictPiece(PE);
+        if (Offset + Piece > GetDictSize(PE))
+          Piece = GetDictSize(PE) - Offset;
+      } else {
+        Piece = GetDictSize(PE) - Offset;
+      }
+      int Err = InflateSetDictionary(
+          Strm, &Idx, (const Bytef *)GetDict(PE) + Offset, Piece);
+      if (Check)
+        assert(Err == Z_OK);
+      Offset += Piece;
+    }
+    assert(Offset == GetDictSize(PE));
   }
   size_t TailSize = GetTailSize(PE) & 0xff;
   uint8_t *Uncompressed = (uint8_t *)malloc(GetPlainDataSize(PE) + TailSize);
@@ -917,9 +975,23 @@ static void ExecutePlan(struct PlanExecution *PE) {
     Print(stderr, "int Bound = deflateBound(&Strm[%zu], %zu);\n", Idx,
           GetPlainDataSize(PE));
   if (GetDictSize(PE) > 0 && !IsWbGzip(WindowBits)) {
-    Err = DeflateSetDictionary(Strm, &Idx, (const Bytef *)GetDict(PE),
-                               GetDictSize(PE));
-    assert(Err == Z_OK);
+    size_t PiecesCount = GetDeflateDictPiecesCount(PE);
+    size_t Offset = 0;
+    for (size_t i = 0; i < PiecesCount && Offset < GetDictSize(PE); i++) {
+      uInt Piece = GetDeflateDictPiece(PE);
+      if (Offset + Piece > GetDictSize(PE))
+        Piece = GetDictSize(PE) - Offset;
+      Err = DeflateSetDictionary(Strm, &Idx,
+                                 (const Bytef *)GetDict(PE) + Offset, Piece);
+      assert(Err == Z_OK);
+      Offset += Piece;
+    }
+    if (Offset < GetDictSize(PE)) {
+      Err =
+          DeflateSetDictionary(Strm, &Idx, (const Bytef *)GetDict(PE) + Offset,
+                               GetDictSize(PE) - Offset);
+      assert(Err == Z_OK);
+    }
   }
   Strm[Idx].next_in = (const Bytef *)GetPlainData(PE);
   Strm[Idx].avail_in = GetPlainDataSize(PE);
