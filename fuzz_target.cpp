@@ -638,8 +638,8 @@ static void PlanExecutionInit(struct PlanExecution *PE, const uint8_t *Data,
   PE->Dict = NULL;
   PE->DictSize = 0;
   if (!IsWbGzip(PE->WindowBits)) {
-    size_t DictSize = POP(PE, uint8_t, 0);
-    if (DictSize > 0 && DictSize < 128) {
+    size_t DictSize = POP(PE, uint16_t, 0);
+    if (DictSize > 0 && DictSize < 1024) {
       size_t MaxDictSize = PE->Size / 4;
       if (DictSize > MaxDictSize)
         DictSize = MaxDictSize;
