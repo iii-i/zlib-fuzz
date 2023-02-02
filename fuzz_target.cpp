@@ -890,7 +890,7 @@ static void ExecutePlanInflate(struct PlanExecution *PE,
     assert(Offset == GetDictSize(PE));
   }
   size_t TailSize = GetTailSize(PE) & 0xff;
-  uint8_t *Uncompressed = (uint8_t *)malloc(GetPlainDataSize(PE) + TailSize);
+  uint8_t *Uncompressed = (uint8_t *)calloc(GetPlainDataSize(PE) + TailSize, 1);
   assert(Uncompressed);
   Strm[Idx].next_in = Compressed;
   Strm[Idx].avail_in = ActualCompressedSize;
