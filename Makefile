@@ -43,6 +43,7 @@ override ZLIB_NG_SYMCC_CMFLAGS:=-DWITH_SSE2=OFF $(ZLIB_NG_SYMCC_CMFLAGS)
 endif
 SYMCC=$(ABS_OUTPUT)symcc/build/symcc
 SYMCC_FUZZING_HELPER=$(OUTPUT)symcc/build/bin/symcc_fuzzing_helper
+SANITIZER?=address
 
 ls_files = $(foreach file,$(shell git -C $(1) ls-files),$(1)/$(file))
 
@@ -54,10 +55,10 @@ fuzz: $(OUTPUT)fuzz_target $(foreach file,$(shell git -C squash-benchmark ls-fil
 	$(OUTPUT)fuzz_target in
 
 $(OUTPUT)fuzz_target: $(OUTPUT)fuzz_target.o $(LIBZ_A)
-	$(CXX) $(LDFLAGS) -fsanitize=address,fuzzer $(OUTPUT)fuzz_target.o -o $@ $(LIBZ_A)
+	$(CXX) $(LDFLAGS) -fsanitize=$(SANITIZER),fuzzer $(OUTPUT)fuzz_target.o -o $@ $(LIBZ_A)
 
 $(OUTPUT)fuzz_libprotobuf_mutator: $(OUTPUT)fuzz_target_libprotobuf_mutator.o $(OUTPUT)fuzz_target.pb.o $(LIBZ_A)
-	$(CXX) $(LDFLAGS) -fsanitize=address,fuzzer $(OUTPUT)fuzz_target_libprotobuf_mutator.o $(OUTPUT)fuzz_target.pb.o -o $@ $(LIBZ_A) -lprotobuf-mutator-libfuzzer -lprotobuf-mutator -lprotobuf
+	$(CXX) $(LDFLAGS) -fsanitize=$(SANITIZER),fuzzer $(OUTPUT)fuzz_target_libprotobuf_mutator.o $(OUTPUT)fuzz_target.pb.o -o $@ $(LIBZ_A) -lprotobuf-mutator-libfuzzer -lprotobuf-mutator -lprotobuf
 
 .PHONY: afl
 afl: $(OUTPUT)fuzz_afl $(AFL_FUZZ)
@@ -69,10 +70,10 @@ $(OUTPUT)fuzz_afl: $(FUZZ_AFL_OBJS) $(AFLCXX)
 	AFL_USE_ASAN=1 $(AFLCXX) $(LDFLAGS) -o $@ $(FUZZ_AFL_OBJS)
 
 $(OUTPUT)fuzz_target.o: fuzz_target.cpp | fmt
-	$(CC) $(CFLAGS) -x c -fsanitize=address,fuzzer -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
+	$(CC) $(CFLAGS) -x c -fsanitize=$(SANITIZER),fuzzer -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
 
 $(OUTPUT)fuzz_target_libprotobuf_mutator.o: fuzz_target.cpp $(OUTPUT)fuzz_target.pb.h | fmt
-	$(CXX) $(CXXFLAGS) -fsanitize=address,fuzzer -DUSE_LIBPROTOBUF_MUTATOR -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
+	$(CXX) $(CXXFLAGS) -fsanitize=$(SANITIZER),fuzzer -DUSE_LIBPROTOBUF_MUTATOR -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
 
 $(OUTPUT)fuzz_target_afl.o: fuzz_target.cpp $(AFLCC) | fmt
 	AFL_USE_ASAN=1 $(AFLCC) $(CFLAGS) -x c -DZLIB_CONST -I$(OUTPUT) -c fuzz_target.cpp -o $@
@@ -116,8 +117,8 @@ $(OUTPUT)zlib-ng/build-libfuzzer/Makefile: zlib-ng/CMakeLists.txt
 			-S zlib-ng \
 			-B $(OUTPUT)zlib-ng/build-libfuzzer \
 			-DCMAKE_C_COMPILER=$(CC) \
-			-DCMAKE_C_FLAGS=-fsanitize=address,fuzzer-no-link \
-			-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address \
+			-DCMAKE_C_FLAGS=-fsanitize=$(SANITIZER),fuzzer-no-link \
+			-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=$(SANITIZER) \
 			$(ZLIB_NG_CMFLAGS)
 
 $(OUTPUT)zlib-ng/build-libfuzzer/libz.a: \
@@ -194,7 +195,7 @@ $(OUTPUT)zlib/build-libfuzzer/libz.a: $(call ls_files,zlib)
 		--exclude=/.git/ \
 		zlib/ $(OUTPUT)zlib/build-libfuzzer
 	cd $(OUTPUT)zlib/build-libfuzzer && \
-		CC=$(CC) CFLAGS=-fsanitize=address,fuzzer-no-link \
+		CC=$(CC) CFLAGS="-fsanitize=$(SANITIZER),fuzzer-no-link -g" \
 			./configure $(ZLIB_CONFIGURE_FLAGS) && \
 		$(MAKE) libz.a
 
